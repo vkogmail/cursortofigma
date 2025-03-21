@@ -102,6 +102,18 @@ async function handleCommand(command, params) {
       return await setCornerRadius(params);
     case "set_text_content":
       return await setTextContent(params);
+    case "get_local_variables":
+      return await getLocalVariables(params);
+    case "get_variable_collections":
+      return await getVariableCollections();
+    case "get_variable_by_id":
+      return await getVariableById(params);
+    case "create_variable_collection":
+      return await createVariableCollection(params);
+    case "create_variable":
+      return await createVariable(params);
+    case "set_bound_variable":
+      return await setBoundVariable(params);
     default:
       throw new Error(`Unknown command: ${command}`);
   }
@@ -1133,3 +1145,154 @@ const setCharactersWithSmartMatchFont = async (
   });
   return true;
 };
+
+// Variable-related functions
+
+async function getLocalVariables(params) {
+  const { type } = params || {};
+  const variables = await figma.variables.getLocalVariablesAsync();
+  if (type) {
+    return variables.filter(variable => variable.resolvedType === type);
+  }
+  return variables.map(variable => ({
+    id: variable.id,
+    name: variable.name,
+    key: variable.key,
+    resolvedType: variable.resolvedType,
+    description: variable.description,
+    hiddenFromPublishing: variable.hiddenFromPublishing,
+    scopes: variable.scopes,
+    codeSyntax: variable.codeSyntax,
+    remote: variable.remote,
+    variableCollectionId: variable.variableCollectionId
+  }));
+}
+
+async function getVariableCollections() {
+  const collections = await figma.variables.getLocalVariableCollectionsAsync();
+  return collections.map(collection => ({
+    id: collection.id,
+    name: collection.name,
+    key: collection.key,
+    modes: collection.modes.map(mode => ({
+      modeId: mode.modeId,
+      name: mode.name
+    })),
+    defaultModeId: collection.defaultModeId,
+    remote: collection.remote,
+    hiddenFromPublishing: collection.hiddenFromPublishing
+  }));
+}
+
+async function getVariableById(params) {
+  const { variableId } = params;
+  if (!variableId) {
+    throw new Error("Missing variableId parameter");
+  }
+
+  const variable = await figma.variables.getVariableByIdAsync(variableId);
+  if (!variable) {
+    throw new Error(`Variable not found with ID: ${variableId}`);
+  }
+
+  return {
+    id: variable.id,
+    name: variable.name,
+    key: variable.key,
+    resolvedType: variable.resolvedType,
+    description: variable.description,
+    hiddenFromPublishing: variable.hiddenFromPublishing,
+    scopes: variable.scopes,
+    codeSyntax: variable.codeSyntax,
+    remote: variable.remote,
+    variableCollectionId: variable.variableCollectionId
+  };
+}
+
+async function createVariableCollection(params) {
+  const { name, modes = [] } = params;
+  if (!name) {
+    throw new Error("Missing name parameter");
+  }
+
+  const collection = await figma.variables.createVariableCollectionAsync({
+    name,
+    modes: modes.map(modeName => ({ name: modeName }))
+  });
+
+  return {
+    id: collection.id,
+    name: collection.name,
+    key: collection.key,
+    modes: collection.modes.map(mode => ({
+      modeId: mode.modeId,
+      name: mode.name
+    })),
+    defaultModeId: collection.defaultModeId
+  };
+}
+
+async function createVariable(params) {
+  const { name, collectionId, type, description, value } = params;
+  if (!name || !collectionId || !type) {
+    throw new Error("Missing required parameters: name, collectionId, or type");
+  }
+
+  const collection = await figma.variables.getVariableCollectionByIdAsync(collectionId);
+  if (!collection) {
+    throw new Error(`Variable collection not found with ID: ${collectionId}`);
+  }
+
+  const variable = await figma.variables.createVariableAsync({
+    name,
+    type,
+    variableCollectionId: collectionId,
+    description,
+    value
+  });
+
+  return {
+    id: variable.id,
+    name: variable.name,
+    key: variable.key,
+    resolvedType: variable.resolvedType,
+    description: variable.description,
+    variableCollectionId: variable.variableCollectionId
+  };
+}
+
+async function setBoundVariable(params) {
+  const { nodeId, property, variableId } = params;
+  if (!nodeId || !property || !variableId) {
+    throw new Error("Missing required parameters: nodeId, property, or variableId");
+  }
+
+  const node = await figma.getNodeByIdAsync(nodeId);
+  if (!node) {
+    throw new Error(`Node not found with ID: ${nodeId}`);
+  }
+
+  const variable = await figma.variables.getVariableByIdAsync(variableId);
+  if (!variable) {
+    throw new Error(`Variable not found with ID: ${variableId}`);
+  }
+
+  // Handle different property types
+  if (property === "fills" || property === "strokes" || property === "effects") {
+    // For array properties like fills, strokes, and effects
+    node[property] = [{
+      type: "VARIABLE",
+      id: variableId
+    }];
+  } else {
+    // For simple properties like width, height, opacity, etc.
+    node.setBoundVariable(property, variable);
+  }
+
+  return {
+    id: node.id,
+    name: node.name,
+    property,
+    variableId
+  };
+}

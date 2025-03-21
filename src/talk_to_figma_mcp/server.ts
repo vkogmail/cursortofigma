@@ -507,34 +507,206 @@ server.tool(
   }
 );
 
-// Get Team Components Tool
-// server.tool(
-//   "get_team_components",
-//   "Get all team library components available in Figma",
-//   {},
-//   async () => {
-//     try {
-//       const result = await sendCommandToFigma('get_team_components');
-//       return {
-//         content: [
-//           {
-//             type: "text",
-//             text: JSON.stringify(result, null, 2)
-//           }
-//         ]
-//       };
-//     } catch (error) {
-//       return {
-//         content: [
-//           {
-//             type: "text",
-//             text: `Error getting team components: ${error instanceof Error ? error.message : String(error)}`
-//           }
-//         ]
-//       };
-//     }
-//   }
-// );
+// Get Local Variables Tool
+server.tool(
+  "mcp_TalkToFigma_get_local_variables",
+  "Get all local variables from the current Figma document",
+  {
+    type: z.string().optional().describe("Optional type filter for variables")
+  },
+  async ({ type }) => {
+    try {
+      const result = await sendCommandToFigma('get_local_variables', { type });
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result, null, 2)
+          }
+        ]
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error getting local variables: ${error instanceof Error ? error.message : String(error)}`
+          }
+        ]
+      };
+    }
+  }
+);
+
+// Get Variable Collections Tool
+server.tool(
+  "mcp_TalkToFigma_get_variable_collections",
+  "Get all variable collections from the current Figma document",
+  {},
+  async () => {
+    try {
+      const result = await sendCommandToFigma('get_variable_collections');
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result, null, 2)
+          }
+        ]
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error getting variable collections: ${error instanceof Error ? error.message : String(error)}`
+          }
+        ]
+      };
+    }
+  }
+);
+
+// Get Variable By ID Tool
+server.tool(
+  "mcp_TalkToFigma_get_variable_by_id",
+  "Get a specific variable by ID",
+  {
+    variableId: z.string().describe("The ID of the variable to get")
+  },
+  async ({ variableId }) => {
+    try {
+      const result = await sendCommandToFigma('get_variable_by_id', { variableId });
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result, null, 2)
+          }
+        ]
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error getting variable: ${error instanceof Error ? error.message : String(error)}`
+          }
+        ]
+      };
+    }
+  }
+);
+
+// Create Variable Collection Tool
+server.tool(
+  "mcp_TalkToFigma_create_variable_collection",
+  "Create a new variable collection",
+  {
+    name: z.string().describe("Name of the collection"),
+    modes: z.array(z.string()).optional().describe("Optional modes for the collection")
+  },
+  async ({ name, modes }) => {
+    try {
+      const result = await sendCommandToFigma('create_variable_collection', { name, modes });
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result, null, 2)
+          }
+        ]
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error creating variable collection: ${error instanceof Error ? error.message : String(error)}`
+          }
+        ]
+      };
+    }
+  }
+);
+
+// Create Variable Tool
+server.tool(
+  "mcp_TalkToFigma_create_variable",
+  "Create a new variable",
+  {
+    name: z.string().describe("Name of the variable"),
+    collectionId: z.string().describe("ID of the collection to create the variable in"),
+    type: z.string().describe("Type of the variable"),
+    description: z.string().optional().describe("Optional description of the variable"),
+    value: z.any().optional().describe("Optional initial value for the variable")
+  },
+  async ({ name, collectionId, type, description, value }) => {
+    try {
+      const result = await sendCommandToFigma('create_variable', {
+        name,
+        collectionId,
+        type,
+        description,
+        value
+      });
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result, null, 2)
+          }
+        ]
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error creating variable: ${error instanceof Error ? error.message : String(error)}`
+          }
+        ]
+      };
+    }
+  }
+);
+
+// Set Bound Variable Tool
+server.tool(
+  "mcp_TalkToFigma_set_bound_variable",
+  "Bind a variable to a node property",
+  {
+    nodeId: z.string().describe("ID of the node to bind the variable to"),
+    property: z.string().describe("Property to bind the variable to"),
+    variableId: z.string().describe("ID of the variable to bind")
+  },
+  async ({ nodeId, property, variableId }) => {
+    try {
+      const result = await sendCommandToFigma('set_bound_variable', {
+        nodeId,
+        property,
+        variableId
+      });
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result, null, 2)
+          }
+        ]
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error binding variable: ${error instanceof Error ? error.message : String(error)}`
+          }
+        ]
+      };
+    }
+  }
+);
 
 // Create Component Instance Tool
 server.tool(
@@ -821,7 +993,13 @@ type FigmaCommand =
   | 'execute_code'
   | 'join'
   | 'set_corner_radius'
-  | 'set_text_content';
+  | 'set_text_content'
+  | 'get_local_variables'
+  | 'get_variable_collections'
+  | 'get_variable_by_id'
+  | 'create_variable_collection'
+  | 'create_variable'
+  | 'set_bound_variable';
 
 // Helper function to process Figma node responses
 function processFigmaNodeResponse(result: unknown): any {
