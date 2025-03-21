@@ -1,3 +1,19 @@
+/**
+ * CHANGES FROM ORIGINAL PROJECT
+ * This version adds complete support for Figma variables through the following additions:
+ * 1. New MCP tools for variable management:
+ *    - mcp_TalkToFigma_get_local_variables
+ *    - mcp_TalkToFigma_get_variable_collections
+ *    - mcp_TalkToFigma_get_variable_by_id
+ *    - mcp_TalkToFigma_create_variable_collection
+ *    - mcp_TalkToFigma_create_variable
+ *    - mcp_TalkToFigma_set_bound_variable
+ * 2. Updated FigmaCommand type to include new variable-related commands
+ * 3. Added proper Zod schemas for variable-related parameters
+ * 
+ * These changes enable full variable support while maintaining all original functionality.
+ */
+
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";

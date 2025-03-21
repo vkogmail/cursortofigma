@@ -1,6 +1,25 @@
 # Cursor Talk to Figma MCP
 
-This project implements a Model Context Protocol (MCP) integration between Cursor AI and Figma, allowing Cursor to communicate with Figma for reading designs and modifying them programmatically.
+This project is a fork of [Sonny Lazuardi's original Cursor Talk to Figma MCP](https://github.com/sonnylazuardi/cursor-talk-to-figma-mcp) with additional functionality for working with Figma variables.
+
+## Changes from Original Project
+
+This fork adds complete support for Figma variables, allowing you to:
+- Get local variables and variable collections
+- Create new variables and variable collections
+- Bind variables to node properties
+
+### Additional MCP Tools
+
+In addition to all the original tools, this version includes:
+
+#### Variable Management
+- `get_local_variables` - Get all local variables from the current Figma document
+- `get_variable_collections` - Get all variable collections
+- `get_variable_by_id` - Get a specific variable by ID
+- `create_variable_collection` - Create a new variable collection
+- `create_variable` - Create a new variable in a collection
+- `set_bound_variable` - Bind a variable to a node property
 
 https://github.com/user-attachments/assets/129a14d2-ed73-470f-9a4c-2240b2a4885c
 
@@ -126,6 +145,15 @@ The MCP server provides the following tools for interacting with Figma:
 
 - `join_channel` - Join a specific channel to communicate with Figma
 
+### Variables
+
+- `get_local_variables` - Get all local variables, optionally filtered by type
+- `get_variable_collections` - Get all variable collections from the document
+- `get_variable_by_id` - Get detailed information about a specific variable
+- `create_variable_collection` - Create a new variable collection with optional modes
+- `create_variable` - Create a new variable in a collection with specified type and value
+- `set_bound_variable` - Bind a variable to a node property (supports fills, strokes, effects, and simple properties)
+
 ## Development
 
 ### Building the Figma Plugin
@@ -133,26 +161,3 @@ The MCP server provides the following tools for interacting with Figma:
 1. Navigate to the Figma plugin directory:
 
    ```
-   cd src/cursor_mcp_plugin
-   ```
-
-2. Edit code.js and ui.html
-
-## Best Practices
-
-When working with the Figma MCP:
-
-1. Always join a channel before sending commands
-2. Get document overview using `get_document_info` first
-3. Check current selection with `get_selection` before modifications
-4. Use appropriate creation tools based on needs:
-   - `create_frame` for containers
-   - `create_rectangle` for basic shapes
-   - `create_text` for text elements
-5. Verify changes using `get_node_info`
-6. Use component instances when possible for consistency
-7. Handle errors appropriately as all commands can throw exceptions
-
-## License
-
-MIT

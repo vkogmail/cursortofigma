@@ -1,6 +1,21 @@
 // This is the main code file for the Cursor MCP Figma plugin
 // It handles Figma API commands
 
+/**
+ * CHANGES FROM ORIGINAL PROJECT
+ * This version adds complete support for Figma variables through the following additions:
+ * 1. Variable-related command handlers in handleCommand()
+ * 2. New functions for managing variables:
+ *    - getLocalVariables: Get all local variables with optional type filtering
+ *    - getVariableCollections: Get all variable collections
+ *    - getVariableById: Get a specific variable by ID
+ *    - createVariableCollection: Create a new variable collection
+ *    - createVariable: Create a new variable in a collection
+ *    - setBoundVariable: Bind a variable to a node property
+ * 
+ * These changes enable full variable support while maintaining all original functionality.
+ */
+
 // Plugin state
 const state = {
   serverPort: 3055, // Default port
