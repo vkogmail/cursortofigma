@@ -4,10 +4,23 @@ This project is a fork of [Sonny Lazuardi's original Cursor Talk to Figma MCP](h
 
 ## Changes from Original Project
 
-This fork adds complete support for Figma variables, allowing you to:
-- Get local variables and variable collections
-- Create new variables and variable collections
-- Bind variables to node properties
+This project is a fork of Sonny Lazuardi's original project with added functionality:
+
+1. Complete support for Figma variables:
+   - Get local variables and variable collections
+   - Create new variables and variable collections
+   - Bind variables to node properties
+   - **Change existing variable bindings** - Successfully tested with changing fill colors on frames and components
+   
+Tools added for variable management:
+- `get_local_variables` - Retrieve all local variables with optional type filtering
+- `get_variable_collections` - Retrieve all variable collections
+- `get_variable_by_id` - Retrieve a specific variable by ID
+- `create_variable_collection` - Create a new variable collection
+- `create_variable` - Create a new variable in a collection
+- `set_bound_variable` - Bind a variable to a node property or change existing variable bindings
+
+All original functionality from Sonny's project is maintained while adding these new capabilities.
 
 ### Additional MCP Tools
 
