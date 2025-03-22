@@ -2,6 +2,39 @@
 
 This project is a fork of [Sonny Lazuardi's original Cursor Talk to Figma MCP](https://github.com/sonnylazuardi/cursor-talk-to-figma-mcp) with additional functionality for working with Figma variables.
 
+## Recent Improvements
+
+### Connection Management
+- **Default Channel System**: Simplified channel management by using a single 'default' channel
+  - No more random channel generation
+  - Consistent channel name across server restarts
+  - Automatic channel joining on connection
+  - Predictable behavior for local development
+
+- **Robust Reconnection Logic**: 
+  - Implemented exponential backoff strategy
+  - Initial quick attempts (1s, 2s) for fast recovery
+  - Gradually increasing delays (4s, 8s, 16s) to prevent server flooding
+  - Maximum 5 reconnection attempts
+  - Clear status feedback in the UI
+  - Automatic reset of reconnection counter on successful connection
+
+- **Type Safety Improvements**:
+  - Added proper TypeScript configurations
+  - Integrated `bun-types` for complete type coverage
+  - No more TypeScript warnings or errors
+
+### Architecture Changes
+- WebSocket server (`src/socket.ts`):
+  - Simplified to use single default channel
+  - Improved error handling and client management
+  - Added proper TypeScript type definitions
+
+- Figma Plugin UI:
+  - Automatic connection to default channel
+  - Better connection status feedback
+  - Improved error handling and recovery
+
 ## Changes from Original Project
 
 This project is a fork of Sonny Lazuardi's original project with added functionality:
@@ -140,37 +173,4 @@ The MCP server provides the following tools for interacting with Figma:
 
 - `move_node` - Move a node to a new position
 - `resize_node` - Resize a node with new dimensions
-- `delete_node` - Delete a node
-
-### Components & Styles
-
-- `get_styles` - Get information about local styles
-- `get_local_components` - Get information about local components
-- `get_team_components` - Get information about team components
-- `create_component_instance` - Create an instance of a component
-
-### Export & Advanced
-
-- `export_node_as_image` - Export a node as an image (PNG, JPG, SVG, or PDF)
-- `execute_figma_code` - Execute arbitrary JavaScript code in Figma (use with caution)
-
-### Connection Management
-
-- `join_channel` - Join a specific channel to communicate with Figma
-
-### Variables
-
-- `get_local_variables` - Get all local variables, optionally filtered by type
-- `get_variable_collections` - Get all variable collections from the document
-- `get_variable_by_id` - Get detailed information about a specific variable
-- `create_variable_collection` - Create a new variable collection with optional modes
-- `create_variable` - Create a new variable in a collection with specified type and value
-- `set_bound_variable` - Bind a variable to a node property (supports fills, strokes, effects, and simple properties)
-
-## Development
-
-### Building the Figma Plugin
-
-1. Navigate to the Figma plugin directory:
-
-   ```
+- `delete_node`

@@ -142,6 +142,10 @@ async function handleCommand(command, params) {
       return await createVariable(params);
     case "set_bound_variable":
       return await setBoundVariable(params);
+    case "set_instance_properties":
+      return await setInstanceProperties(params);
+    case "mcp_TalkToFigma_set_instance_properties":
+      return await setInstanceProperties(params);
     default:
       throw new Error(`Unknown command: ${command}`);
   }
@@ -1388,5 +1392,76 @@ async function setBoundVariable(params) {
       success: false,
       error: error.message
     };
+  }
+}
+
+/**
+ * Sets properties on a component instance, including variants.
+ * @param {Object} params - The parameters for setting instance properties
+ * @param {string} params.nodeId - The ID of the instance to modify
+ * @param {Object} params.properties - Properties to set on the instance
+ * @returns {Object} Result object with success status and details
+ */
+async function setInstanceProperties(params) {
+  const { nodeId, properties } = params;
+  if (!nodeId || !properties) {
+    throw new Error("Missing required parameters: nodeId or properties");
+  }
+
+  const node = await figma.getNodeByIdAsync(nodeId);
+  if (!node) {
+    throw new Error(`Node not found with ID: ${nodeId}`);
+  }
+
+  if (node.type !== "INSTANCE") {
+    throw new Error(`Node is not a component instance: ${nodeId}`);
+  }
+
+  try {
+    // Get the main component
+    const mainComponent = await node.getMainComponentAsync();
+    if (!mainComponent) {
+      throw new Error("Could not find main component");
+    }
+
+    // Get the component set
+    const componentSet = mainComponent.parent;
+    if (!componentSet || componentSet.type !== "COMPONENT_SET") {
+      throw new Error("Component is not part of a component set");
+    }
+
+    // Get all variants in this component set
+    const variants = componentSet.children;
+    
+    // Build a map of valid properties and their possible values
+    const validProperties = {};
+    variants.forEach(variant => {
+      if (variant.type === "COMPONENT") {
+        const variantProperties = variant.name.split(", ");
+        variantProperties.forEach(prop => {
+          const [key, value] = prop.split("=");
+          if (!validProperties[key]) {
+            validProperties[key] = new Set();
+          }
+          validProperties[key].add(value);
+        });
+      }
+    });
+
+    console.log("Available properties:", validProperties);
+
+    // Set the properties directly
+    await node.setProperties(properties);
+
+    return {
+      success: true,
+      message: `Updated instance "${node.name}" with properties: ${JSON.stringify(properties)}`,
+      availableProperties: Object.fromEntries(
+        Object.entries(validProperties).map(([key, values]) => [key, Array.from(values)])
+      )
+    };
+  } catch (error) {
+    console.error('Error setting instance properties:', error);
+    throw error;
   }
 }

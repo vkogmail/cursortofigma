@@ -241,6 +241,9 @@
         serverPort: 3055,
         pendingRequests: new Map(),
         channel: null,
+        reconnectAttempts: 0,
+        maxReconnectAttempts: 5,
+        reconnectTimer: null
       };
 
       // UI Elements
@@ -270,6 +273,26 @@
         portInput.disabled = isConnected;
       }
 
+      // Add reconnection function with exponential backoff
+      function attemptReconnect() {
+        if (state.reconnectAttempts >= state.maxReconnectAttempts) {
+          console.log("Max reconnection attempts reached");
+          updateConnectionStatus(false, "Max reconnection attempts reached. Please reconnect manually.");
+          return;
+        }
+
+        // Calculate delay with exponential backoff (1s, 2s, 4s, 8s, 16s)
+        const delay = Math.min(1000 * Math.pow(2, state.reconnectAttempts), 16000);
+        console.log(`Attempting to reconnect in ${delay/1000} seconds...`);
+        updateConnectionStatus(false, `Attempting to reconnect in ${delay/1000} seconds...`);
+        
+        clearTimeout(state.reconnectTimer);
+        state.reconnectTimer = setTimeout(() => {
+          state.reconnectAttempts++;
+          connectToServer(state.serverPort);
+        }, delay);
+      }
+
       // Connect to WebSocket server
       async function connectToServer(port) {
         try {
@@ -282,16 +305,20 @@
           state.socket = new WebSocket(`ws://localhost:${port}`);
 
           state.socket.onopen = () => {
-            // Generate random channel name
-            const channelName = generateChannelName();
+            // Reset reconnection attempts on successful connection
+            state.reconnectAttempts = 0;
+            clearTimeout(state.reconnectTimer);
+
+            // Use default channel instead of generating random one
+            const channelName = 'default';
             console.log("Joining channel:", channelName);
             state.channel = channelName;
 
-            // Join the channel using the same format as App.tsx
+            // Join the channel
             state.socket.send(
               JSON.stringify({
                 type: "join",
-                channel: channelName.trim(),
+                channel: channelName,
               })
             );
           };
@@ -338,6 +365,9 @@
             state.connected = false;
             state.socket = null;
             updateConnectionStatus(false, "Disconnected from server");
+            
+            // Attempt to reconnect with exponential backoff
+            attemptReconnect();
           };
 
           state.socket.onerror = (error) => {
@@ -485,18 +515,6 @@
         return (
           Date.now().toString(36) + Math.random().toString(36).substr(2, 5)
         );
-      }
-
-      // Add this function after the generateId() function
-      function generateChannelName() {
-        const characters = "abcdefghijklmnopqrstuvwxyz0123456789";
-        let result = "";
-        for (let i = 0; i < 8; i++) {
-          result += characters.charAt(
-            Math.floor(Math.random() * characters.length)
-          );
-        }
-        return result;
       }
 
       // Tab switching

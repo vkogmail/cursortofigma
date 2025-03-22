@@ -724,6 +724,39 @@ server.tool(
   }
 );
 
+// Set Instance Properties Tool
+server.tool(
+  "set_instance_properties",
+  "Set properties of a component instance, including variants",
+  {
+    nodeId: z.string().describe("ID of the instance to modify"),
+    properties: z.record(z.string()).describe("Properties to set on the instance")
+  },
+  async ({ nodeId, properties }) => {
+    try {
+      const result = await sendCommandToFigma('set_instance_properties', { nodeId, properties });
+      const typedResult = result as { name: string, properties: Record<string, string> };
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Updated instance "${typedResult.name}" with properties: ${JSON.stringify(typedResult.properties)}`
+          }
+        ]
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error setting instance properties: ${error instanceof Error ? error.message : String(error)}`
+          }
+        ]
+      };
+    }
+  }
+);
+
 // Create Component Instance Tool
 server.tool(
   "create_component_instance",
@@ -869,7 +902,7 @@ server.tool(
 
 // Set Text Content Tool
 server.tool(
-  "set_text_content",
+  "mcp_TalkToFigma_set_text_content",
   "Set the text content of an existing text node in Figma",
   {
     nodeId: z.string().describe("The ID of the text node to modify"),
@@ -1015,7 +1048,8 @@ type FigmaCommand =
   | 'get_variable_by_id'
   | 'create_variable_collection'
   | 'create_variable'
-  | 'set_bound_variable';
+  | 'set_bound_variable'
+  | 'set_instance_properties';
 
 // Helper function to process Figma node responses
 function processFigmaNodeResponse(result: unknown): any {
