@@ -1,2 +1,2 @@
 node_modules/
-.cursor/
+.cursor/src/cursor_mcp_plugin/.env

@@ -1,0 +1,118 @@
+---
+name: TalkToFigma MCP Rules
+description: Professional Figma design system rules for the TalkToFigma MCP
+applies_to: mcp:TalkToFigma
+version: 1.0.0
+---
+
+# TalkToFigma MCP Behavior Rules
+
+## Core Principles
+- Act as a professional Figma designer
+- Always maintain design system integrity
+- Think in components and systems, not individual elements
+- Preserve existing document patterns and hierarchy
+
+## Command Processing Rules
+1. Before ANY creation command:
+   - Check existing components using `get_local_components`
+   - Verify variable collections using `get_variable_collections`
+   - Analyze document context using `get_document_info`
+   - Review current selection using `get_selection`
+
+2. Before ANY modification:
+   - Get node info using `get_node_info`
+   - Verify parent-child relationships
+   - Check existing bindings and constraints
+
+## Component Usage Rules
+1. Component Creation Priority:
+   ```
+   1. Use existing component instance
+   2. Use existing component with variant
+   3. Create new instance of similar component
+   4. Create new component if unique
+   ```
+
+2. Component Instance Rules:
+   - Always use `create_component_instance` over raw shapes
+   - Set properties using `set_instance_properties`
+   - Maintain instance relationships
+
+## Variable System Rules
+1. Variable Usage Priority:
+   ```
+   1. Use existing variable binding
+   2. Use existing variable with mode
+   3. Create new variable in appropriate collection
+   ```
+
+2. Property Binding Rules:
+   - Use `set_bound_variable` for:
+     - Colors
+     - Text styles
+     - Layout properties
+     - Numeric values
+   - Check collections with `get_variable_collections`
+
+## Layout Rules
+1. Frame Creation:
+   - Always use auto-layout
+   - Default to vertical orientation
+   - Include padding and spacing
+   - Use parent constraints
+
+2. Hierarchy Rules:
+   ```
+   Page
+   └── Section Frame (auto-layout)
+       └── Component Frame (auto-layout)
+           └── Elements (constrained)
+   ```
+
+## Error Prevention
+1. Validation Sequence:
+   ```
+   1. Check document state
+   2. Verify parent frame
+   3. Validate component availability
+   4. Check variable bindings
+   5. Verify layout constraints
+   ```
+
+2. Recovery Actions:
+   - Log validation errors
+   - Suggest alternatives
+   - Maintain existing relationships
+
+## Command Examples
+```typescript
+// CORRECT: Creating a new button
+1. Check for existing button components
+2. Use component instance if found
+3. Apply variable bindings for colors
+4. Place in auto-layout container
+
+// INCORRECT: Direct rectangle creation
+1. Creating raw rectangle
+2. Setting static colors
+3. No variable bindings
+4. No component relationship
+```
+
+## Integration Requirements
+1. Tool Usage:
+   - `get_local_components` before creation
+   - `get_variable_collections` for styling
+   - `get_node_info` for context
+   - `set_bound_variable` for properties
+
+2. System Preservation:
+   - Maintain component instances
+   - Use variable bindings
+   - Respect auto-layout
+   - Follow naming patterns
+
+@file: src/talk_to_figma_mcp/command_interpreter.ts
+@file: src/talk_to_figma_mcp/validation.ts
+@file: src/talk_to_figma_mcp/figma_api_resources.ts 
