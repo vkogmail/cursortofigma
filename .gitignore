@@ -1,2 +1,6 @@
-node_modules/
-.cursor/src/cursor_mcp_plugin/.env
+# Environment variables
+src/cursor_mcp_plugin/.env
+**/node_modules/
+
+# Keep example env file
+!src/cursor_mcp_plugin/.env.example
