@@ -3,10 +3,14 @@
     "target": "ESNext",
     "module": "ESNext",
     "moduleResolution": "node",
-    "types": ["bun-types"],
+    "types": ["bun-types", "@figma/plugin-typings"],
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "strict": true
+    "strict": true,
+    "lib": ["ESNext", "DOM"],
+    "resolveJsonModule": true,
+    "allowJs": true,
+    "noEmit": true
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules"]

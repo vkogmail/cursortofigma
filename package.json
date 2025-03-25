@@ -9,13 +9,10 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "latest",
-    "bun": "latest",
-    "uuid": "latest",
-    "ws": "latest",
-    "zod": "latest"
+    "bun": "latest"
   },
   "devDependencies": {
-    "@types/ws": "^8.18.0",
+    "@figma/plugin-typings": "^1.109.0",
     "bun-types": "^1.2.5"
   }
 }

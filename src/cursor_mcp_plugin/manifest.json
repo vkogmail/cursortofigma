@@ -8,10 +8,11 @@
     "figma",
     "figjam"
   ],
-  "permissions": [],
+  "permissions": ["teamlibrary"],
   "networkAccess": {
     "allowedDomains": [
-      "https://google.com"
+      "https://google.com",
+      "https://api.figma.com"
     ],
     "devAllowedDomains": [
       "http://localhost:3055",

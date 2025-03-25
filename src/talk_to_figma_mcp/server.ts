@@ -41,7 +41,7 @@ let ws: WebSocket | null = null;
 const pendingRequests = new Map<string, {
   resolve: (value: unknown) => void;
   reject: (reason: unknown) => void;
-  timeout: NodeJS.Timeout;
+  timeout: ReturnType<typeof setTimeout>;
 }>();
 
 // Track which channel each client is in
@@ -203,15 +203,22 @@ server.tool(
       b: z.number().min(0).max(1).describe("Blue component (0-1)"),
       a: z.number().min(0).max(1).optional().describe("Alpha component (0-1)")
     }).optional().describe("Stroke color in RGBA format"),
-    strokeWeight: z.number().positive().optional().describe("Stroke weight")
+    strokeWeight: z.number().positive().optional().describe("Stroke weight"),
+    autoLayout: z.object({
+      direction: z.enum(["VERTICAL", "HORIZONTAL"]).describe("Layout direction"),
+      padding: z.number().min(0).describe("Padding around content"),
+      spacing: z.number().min(0).describe("Space between items"),
+      alignment: z.enum(["MIN", "CENTER", "MAX", "SPACE_BETWEEN"]).describe("Content alignment")
+    }).optional().describe("Auto-layout settings")
   },
-  async ({ x, y, width, height, name, parentId, fillColor, strokeColor, strokeWeight }) => {
+  async ({ x, y, width, height, name, parentId, fillColor, strokeColor, strokeWeight, autoLayout }) => {
     try {
       const result = await sendCommandToFigma('create_frame', {
         x, y, width, height, name: name || 'Frame', parentId,
         fillColor: fillColor || { r: 1, g: 1, b: 1, a: 1 },
         strokeColor: strokeColor,
-        strokeWeight: strokeWeight
+        strokeWeight: strokeWeight,
+        autoLayout
       });
       const typedResult = result as { name: string, id: string };
       return {
@@ -372,18 +379,26 @@ server.tool(
   "Move a node to a new position in Figma",
   {
     nodeId: z.string().describe("The ID of the node to move"),
-    x: z.number().describe("New X position"),
-    y: z.number().describe("New Y position")
+    x: z.number().optional().describe("New X position"),
+    y: z.number().optional().describe("New Y position"),
+    parentId: z.string().optional().describe("New parent node ID")
   },
-  async ({ nodeId, x, y }) => {
+  async ({ nodeId, x, y, parentId }) => {
     try {
-      const result = await sendCommandToFigma('move_node', { nodeId, x, y });
+      const result = await sendCommandToFigma('move_node', { nodeId, x, y, parentId });
       const typedResult = result as { name: string };
+      let message = `Modified node "${typedResult.name}"`;
+      if (x !== undefined && y !== undefined) {
+        message += ` position to (${x}, ${y})`;
+      }
+      if (parentId) {
+        message += ` and moved to parent ${parentId}`;
+      }
       return {
         content: [
           {
             type: "text",
-            text: `Moved node "${typedResult.name}" to position (${x}, ${y})`
+            text: message
           }
         ]
       };
@@ -764,11 +779,12 @@ server.tool(
   {
     componentKey: z.string().describe("Key of the component to instantiate"),
     x: z.number().describe("X position"),
-    y: z.number().describe("Y position")
+    y: z.number().describe("Y position"),
+    parentId: z.string().optional().describe("Optional parent node ID to append the instance to")
   },
-  async ({ componentKey, x, y }) => {
+  async ({ componentKey, x, y, parentId }) => {
     try {
-      const result = await sendCommandToFigma('create_component_instance', { componentKey, x, y });
+      const result = await sendCommandToFigma('create_component_instance', { componentKey, x, y, parentId });
       const typedResult = result as { name: string, id: string };
       return {
         content: [
@@ -1037,6 +1053,7 @@ type FigmaCommand =
   | 'get_styles'
   | 'get_local_components'
   | 'get_team_components'
+  | 'get_all_components'
   | 'create_component_instance'
   | 'export_node_as_image'
   | 'execute_code'
@@ -1185,9 +1202,7 @@ function sendCommandToFigma(command: FigmaCommand, params: unknown = {}): Promis
       message: {
         id,
         command,
-        params: {
-          ...(params as any),
-        }
+        params
       }
     };
 
@@ -1250,6 +1265,64 @@ server.tool(
           {
             type: "text",
             text: `Error joining channel: ${error instanceof Error ? error.message : String(error)}`
+          }
+        ]
+      };
+    }
+  }
+);
+
+// Get Team Components Tool
+server.tool(
+  "get_team_components",
+  "Get all components from team libraries in the Figma document",
+  {},
+  async () => {
+    try {
+      const result = await sendCommandToFigma('get_team_components');
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result, null, 2)
+          }
+        ]
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error getting team components: ${error instanceof Error ? error.message : String(error)}`
+          }
+        ]
+      };
+    }
+  }
+);
+
+// Get All Components Tool
+server.tool(
+  "get_all_components",
+  "Get all components (both local and from team libraries) in the Figma document",
+  {},
+  async () => {
+    try {
+      const result = await sendCommandToFigma('get_all_components');
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result, null, 2)
+          }
+        ]
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error getting all components: ${error instanceof Error ? error.message : String(error)}`
           }
         ]
       };

@@ -118,8 +118,8 @@ async function handleCommand(command, params) {
       return await getStyles();
     case "get_local_components":
       return await getLocalComponents();
-    // case "get_team_components":
-    //   return await getTeamComponents();
+    case "get_team_components":
+      return await getTeamComponents();
     case "create_component_instance":
       return await createComponentInstance(params);
     case "export_node_as_image":
@@ -292,23 +292,44 @@ async function createRectangle(params) {
 }
 
 async function createFrame(params) {
-  const {
-    x = 0,
-    y = 0,
-    width = 100,
-    height = 100,
-    name = "Frame",
-    parentId,
-    fillColor,
-    strokeColor,
-    strokeWeight,
-  } = params || {};
+  const { x = 0, y = 0, width = 100, height = 100, name, parentId, autoLayout, fillColor, strokeColor, strokeWeight } = params || {};
+
+  console.log("[createFrame] Starting with params:", { x, y, width, height, name, parentId, autoLayout });
 
   const frame = figma.createFrame();
   frame.x = x;
   frame.y = y;
   frame.resize(width, height);
-  frame.name = name;
+  frame.name = name || "Frame";
+
+  console.log("[createFrame] Frame created with initial ID:", frame.id);
+  console.log("[createFrame] Initial parent:", frame.parent ? { id: frame.parent.id, name: frame.parent.name, type: frame.parent.type } : "none");
+
+  if (parentId) {
+    console.log("[createFrame] Attempting to get parent node:", parentId);
+    const parentNode = await figma.getNodeByIdAsync(parentId);
+    console.log("[createFrame] Parent node found:", parentNode ? {
+      id: parentNode.id,
+      name: parentNode.name,
+      type: parentNode.type,
+      children: parentNode.children ? parentNode.children.length : "N/A"
+    } : "null");
+
+    if (!parentNode) {
+      throw new Error(`Parent node not found with ID: ${parentId}`);
+    }
+    if (!("appendChild" in parentNode)) {
+      throw new Error(`Parent node does not support children: ${parentId}`);
+    }
+
+    console.log("[createFrame] Before appendChild - frame parent:", frame.parent ? { id: frame.parent.id, name: frame.parent.name } : "none");
+    parentNode.appendChild(frame);
+    console.log("[createFrame] After appendChild - frame parent:", frame.parent ? { id: frame.parent.id, name: frame.parent.name } : "none");
+    console.log("[createFrame] Parent's children after append:", parentNode.children.map(child => ({ id: child.id, name: child.name, type: child.type })));
+  } else {
+    console.log("[createFrame] No parent ID provided, adding to current page");
+    figma.currentPage.appendChild(frame);
+  }
 
   // Set fill color if provided
   if (fillColor) {
@@ -343,31 +364,84 @@ async function createFrame(params) {
     frame.strokeWeight = strokeWeight;
   }
 
-  // If parentId is provided, append to that node, otherwise append to current page
-  if (parentId) {
-    const parentNode = await figma.getNodeByIdAsync(parentId);
-    if (!parentNode) {
-      throw new Error(`Parent node not found with ID: ${parentId}`);
-    }
-    if (!("appendChild" in parentNode)) {
-      throw new Error(`Parent node does not support children: ${parentId}`);
-    }
-    parentNode.appendChild(frame);
-  } else {
-    figma.currentPage.appendChild(frame);
+  // Set auto-layout if provided
+  if (autoLayout) {
+    frame.layoutMode = autoLayout.direction;
+    frame.paddingLeft = frame.paddingRight = frame.paddingTop = frame.paddingBottom = autoLayout.padding;
+    frame.itemSpacing = autoLayout.spacing;
+    frame.primaryAxisAlignItems = autoLayout.alignment;
+    frame.counterAxisAlignItems = autoLayout.alignment === "SPACE_BETWEEN" ? "CENTER" : autoLayout.alignment;
   }
 
-  return {
+  const result = {
     id: frame.id,
     name: frame.name,
     x: frame.x,
     y: frame.y,
     width: frame.width,
     height: frame.height,
-    fills: frame.fills,
-    strokes: frame.strokes,
-    strokeWeight: frame.strokeWeight,
+    parentId: frame.parent ? frame.parent.id : undefined
+  };
+
+  console.log("[createFrame] Final frame state:", {
+    id: frame.id,
     parentId: frame.parent ? frame.parent.id : undefined,
+    x: frame.x,
+    y: frame.y,
+    parent: frame.parent ? { id: frame.parent.id, name: frame.parent.name, type: frame.parent.type } : "none"
+  });
+
+  return result;
+}
+
+// Helper function to calculate the next position in an auto-layout frame
+async function calculateNextPosition(parentId) {
+  if (!parentId) return { x: 0, y: 0 };
+
+  const parent = await figma.getNodeByIdAsync(parentId);
+  if (!parent || !("children" in parent)) {
+    return { x: 0, y: 0 };
+  }
+
+  // If parent has auto-layout
+  if ("layoutMode" in parent && parent.layoutMode !== "NONE") {
+    // Auto-layout handles positioning automatically
+    return { x: 0, y: 0 };
+  }
+
+  // For non-auto-layout frames, calculate next position
+  const children = parent.children;
+  if (children.length === 0) {
+    // First child - use parent's padding if available
+    return {
+      x: "paddingLeft" in parent ? parent.paddingLeft : 0,
+      y: "paddingTop" in parent ? parent.paddingTop : 0
+    };
+  }
+
+  // Get the last child's position and dimensions
+  const lastChild = children[children.length - 1];
+  if (!("x" in lastChild) || !("y" in lastChild)) {
+    return { x: 0, y: 0 };
+  }
+
+  // Calculate next position based on the last child
+  if (parent.layoutMode === "HORIZONTAL") {
+    return {
+      x: lastChild.x + lastChild.width + (parent.itemSpacing || 0),
+      y: lastChild.y
+    };
+  } else if (parent.layoutMode === "VERTICAL") {
+    return {
+      x: lastChild.x,
+      y: lastChild.y + lastChild.height + (parent.itemSpacing || 0)
+    };
+  }
+
+  // Default positioning for non-auto-layout
+  return {
+    x: lastChild.x,
+    y: lastChild.y + lastChild.height + 10 // Default spacing
   };
 }
 
@@ -378,41 +452,35 @@ async function createText(params) {
     text = "Text",
     fontSize = 14,
     fontWeight = 400,
-    fontColor = { r: 0, g: 0, b: 0, a: 1 }, // Default to black
+    fontColor = { r: 0, g: 0, b: 0, a: 1 },
     name = "Text",
     parentId,
   } = params || {};
 
+  // Calculate position if parent is provided
+  const position = parentId ? await calculateNextPosition(parentId) : { x, y };
+
   // Map common font weights to Figma font styles
   const getFontStyle = (weight) => {
     switch (weight) {
-      case 100:
-        return "Thin";
-      case 200:
-        return "Extra Light";
-      case 300:
-        return "Light";
-      case 400:
-        return "Regular";
-      case 500:
-        return "Medium";
-      case 600:
-        return "Semi Bold";
-      case 700:
-        return "Bold";
-      case 800:
-        return "Extra Bold";
-      case 900:
-        return "Black";
-      default:
-        return "Regular";
+      case 100: return "Thin";
+      case 200: return "Extra Light";
+      case 300: return "Light";
+      case 400: return "Regular";
+      case 500: return "Medium";
+      case 600: return "Semi Bold";
+      case 700: return "Bold";
+      case 800: return "Extra Bold";
+      case 900: return "Black";
+      default: return "Regular";
     }
   };
 
   const textNode = figma.createText();
-  textNode.x = x;
-  textNode.y = y;
+  textNode.x = position.x;
+  textNode.y = position.y;
   textNode.name = name;
+
   try {
     await figma.loadFontAsync({
       family: "Inter",
@@ -423,9 +491,9 @@ async function createText(params) {
   } catch (error) {
     console.error("Error setting font size", error);
   }
+
   setCharacters(textNode, text);
 
-  // Set text color
   const paintStyle = {
     type: "SOLID",
     color: {
@@ -437,7 +505,6 @@ async function createText(params) {
   };
   textNode.fills = [paintStyle];
 
-  // If parentId is provided, append to that node, otherwise append to current page
   if (parentId) {
     const parentNode = await figma.getNodeByIdAsync(parentId);
     if (!parentNode) {
@@ -573,14 +640,10 @@ async function setStrokeColor(params) {
 }
 
 async function moveNode(params) {
-  const { nodeId, x, y } = params || {};
+  const { nodeId, x, y, parentId } = params || {};
 
   if (!nodeId) {
     throw new Error("Missing nodeId parameter");
-  }
-
-  if (x === undefined || y === undefined) {
-    throw new Error("Missing x or y parameters");
   }
 
   const node = await figma.getNodeByIdAsync(nodeId);
@@ -588,18 +651,33 @@ async function moveNode(params) {
     throw new Error(`Node not found with ID: ${nodeId}`);
   }
 
-  if (!("x" in node) || !("y" in node)) {
-    throw new Error(`Node does not support position: ${nodeId}`);
+  // Update position if provided
+  if (x !== undefined && y !== undefined) {
+    if (!("x" in node) || !("y" in node)) {
+      throw new Error(`Node does not support position: ${nodeId}`);
+    }
+    node.x = x;
+    node.y = y;
   }
 
-  node.x = x;
-  node.y = y;
+  // Update parent if provided
+  if (parentId) {
+    const parentNode = await figma.getNodeByIdAsync(parentId);
+    if (!parentNode) {
+      throw new Error(`Parent node not found with ID: ${parentId}`);
+    }
+    if (!("appendChild" in parentNode)) {
+      throw new Error(`Parent node does not support children: ${parentId}`);
+    }
+    parentNode.appendChild(node);
+  }
 
   return {
     id: node.id,
     name: node.name,
-    x: node.x,
-    y: node.y,
+    x: "x" in node ? node.x : undefined,
+    y: "y" in node ? node.y : undefined,
+    parentId: node.parent ? node.parent.id : undefined
   };
 }
 
@@ -693,58 +771,199 @@ async function getStyles() {
 }
 
 async function getLocalComponents() {
-  await figma.loadAllPagesAsync();
+  console.log("[getLocalComponents] Getting local components...");
+  
+  try {
+    await figma.loadAllPagesAsync();
+    console.log("[getLocalComponents] All pages loaded");
 
-  const components = figma.root.findAllWithCriteria({
-    types: ["COMPONENT"],
-  });
+    const components = figma.root.findAllWithCriteria({
+      types: ["COMPONENT"],
+    });
 
-  return {
-    count: components.length,
-    components: components.map((component) => ({
-      id: component.id,
-      name: component.name,
-      key: "key" in component ? component.key : null,
-    })),
-  };
+    console.log(`[getLocalComponents] Found ${components.length} local components`);
+
+    return {
+      count: components.length,
+      components: components.map((component) => ({
+        id: component.id,
+        name: component.name,
+        key: "key" in component ? component.key : null,
+        description: component.description || "",
+        remote: false,
+        libraryName: "Local",
+        documentationLinks: component.documentationLinks || [],
+        width: component.width,
+        height: component.height,
+        type: component.type
+      })),
+    };
+  } catch (error) {
+    console.error("[getLocalComponents] Error:", error);
+    throw new Error(`Error getting local components: ${error.message}`);
+  }
 }
 
-// async function getTeamComponents() {
-//   try {
-//     const teamComponents =
-//       await figma.teamLibrary.getAvailableComponentsAsync();
+async function getTeamComponents() {
+  console.log("[getTeamComponents] Getting team library components...");
+  
+  try {
+    // Get all available components from team libraries
+    const components = await figma.teamLibrary.getAvailableComponentsAsync();
+    
+    // Map components to our expected format
+    const mappedComponents = components.map(component => ({
+      key: component.key,
+      name: component.name,
+      description: component.description || "",
+      remote: true,
+      libraryName: component.libraryName || "Team Library",
+      documentationLinks: [],
+      type: "COMPONENT",
+      fileKey: component.fileKey
+    }));
 
-//     return {
-//       count: teamComponents.length,
-//       components: teamComponents.map((component) => ({
-//         key: component.key,
-//         name: component.name,
-//         description: component.description,
-//         libraryName: component.libraryName,
-//       })),
-//     };
-//   } catch (error) {
-//     throw new Error(`Error getting team components: ${error.message}`);
-//   }
-// }
+    console.log(`[getTeamComponents] Found ${mappedComponents.length} team components`);
 
+    return {
+      count: mappedComponents.length,
+      components: mappedComponents
+    };
+  } catch (error) {
+    console.error("[getTeamComponents] Error:", error);
+    throw new Error(`Error getting team components: ${error.message}`);
+  }
+}
+
+async function getAllComponents() {
+  console.log("[getAllComponents] Getting all components (local + team)...");
+  
+  try {
+    const [localResult, teamResult] = await Promise.all([
+      getLocalComponents(),
+      getTeamComponents()
+    ]);
+
+    const allComponents = {
+      count: localResult.count + teamResult.count,
+      components: [
+        ...localResult.components,
+        ...teamResult.components
+      ]
+    };
+
+    console.log(`[getAllComponents] Found total ${allComponents.count} components`);
+    console.log(`[getAllComponents] - ${localResult.count} local components`);
+    console.log(`[getAllComponents] - ${teamResult.count} team components`);
+
+    return allComponents;
+  } catch (error) {
+    console.error("[getAllComponents] Error:", error);
+    throw new Error(`Error getting all components: ${error.message}`);
+  }
+}
+
+/**
+ * Creates an instance of a component and optionally moves it to a parent node.
+ * 
+ * Note: Due to how Figma handles component instances, we can't directly create an instance
+ * inside a parent frame like we can with other elements (rectangles, frames, text, etc.).
+ * Instead, we use a two-step process:
+ * 1. Create the instance on the current page
+ * 2. Move it to the desired parent frame if specified
+ * 
+ * This approach is more reliable than trying to parent during creation, which can lead
+ * to "node does not exist" errors.
+ */
 async function createComponentInstance(params) {
-  const { componentKey, x = 0, y = 0 } = params || {};
+  const { componentKey, x = 0, y = 0, parentId } = params || {};
+
+  console.log("[createComponentInstance] Starting with params:", { componentKey, x, y, parentId });
 
   if (!componentKey) {
     throw new Error("Missing componentKey parameter");
   }
 
   try {
-    const component = await figma.importComponentByKeyAsync(componentKey);
-    const instance = component.createInstance();
+    console.log("[createComponentInstance] Loading all pages...");
+    await figma.loadAllPagesAsync();
 
+    // First try to find the component locally
+    console.log("[createComponentInstance] Searching for local components...");
+    const components = figma.root.findAllWithCriteria({
+      types: ["COMPONENT"]
+    });
+    
+    // Find the component with matching key
+    const localComponent = components.find(comp => comp.key === componentKey);
+    
+    let component;
+    if (localComponent) {
+      console.log("[createComponentInstance] Found local component:", { 
+        name: localComponent.name, 
+        id: localComponent.id,
+        key: localComponent.key,
+        source: "local"
+      });
+      component = localComponent;
+    } else {
+      console.log("[createComponentInstance] Component not found locally, trying to import from library...");
+      try {
+        component = await figma.importComponentByKeyAsync(componentKey);
+        console.log("[createComponentInstance] Import successful:", { 
+          name: component.name, 
+          id: component.id,
+          key: component.key,
+          source: "library"
+        });
+      } catch (importError) {
+        console.error("[createComponentInstance] Import failed:", importError);
+        throw importError;
+      }
+    }
+
+    if (!component) {
+      throw new Error("Component not found locally or in libraries");
+    }
+
+    // Step 1: Create the instance on the current page
+    console.log("[createComponentInstance] Creating instance from component:", { 
+      name: component.name, 
+      id: component.id,
+      source: localComponent ? "local" : "library"
+    });
+    const instance = component.createInstance();
+    console.log("[createComponentInstance] Instance created:", { 
+      id: instance.id, 
+      name: instance.name,
+      initialParent: instance.parent ? { id: instance.parent.id, name: instance.parent.name, type: instance.parent.type } : "none"
+    });
+
+    // Set initial position
     instance.x = x;
     instance.y = y;
 
+    // Ensure instance is on the current page
     figma.currentPage.appendChild(instance);
 
-    return {
+    // Step 2: If a parent is specified, move the instance to it
+    if (parentId) {
+      console.log("[createComponentInstance] Moving instance to parent:", parentId);
+      const parentNode = await figma.getNodeByIdAsync(parentId);
+      if (!parentNode) {
+        throw new Error(`Parent node not found with ID: ${parentId}`);
+      }
+      if (!("appendChild" in parentNode)) {
+        throw new Error(`Parent node does not support children: ${parentId}`);
+      }
+
+      // Move the instance to the parent
+      // Note: For auto-layout frames, x/y coordinates will be ignored
+      parentNode.appendChild(instance);
+      console.log("[createComponentInstance] Instance moved to parent successfully");
+    }
+
+    const result = {
       id: instance.id,
       name: instance.name,
       x: instance.x,
@@ -752,8 +971,21 @@ async function createComponentInstance(params) {
       width: instance.width,
       height: instance.height,
       componentId: instance.componentId,
+      source: localComponent ? "local" : "library",
+      libraryName: localComponent ? "Local" : component.description,
+      parentId: instance.parent ? instance.parent.id : undefined
     };
+    
+    console.log("[createComponentInstance] Final instance state:", {
+      id: instance.id,
+      parentId: instance.parent ? instance.parent.id : undefined,
+      x: instance.x,
+      y: instance.y,
+      parent: instance.parent ? { id: instance.parent.id, name: instance.parent.name, type: instance.parent.type } : "none"
+    });
+    return result;
   } catch (error) {
+    console.error("[createComponentInstance] Error:", error);
     throw new Error(`Error creating component instance: ${error.message}`);
   }
 }

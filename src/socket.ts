@@ -1,23 +1,10 @@
 import { Server, ServerWebSocket } from "bun";
 
-// Define WebSocket constants
-const WebSocket = {
-  OPEN: 1
-};
-
 /**
  * Connection Management System
  * 
- * This WebSocket server implements a simplified connection system using a single default channel.
- * Instead of managing multiple channels, all clients connect to a single 'default' channel.
- * This approach simplifies the architecture and makes the behavior more predictable,
- * especially in a local development environment.
- * 
- * Key features:
- * - Single default channel for all connections
- * - Automatic client registration
- * - Simplified message broadcasting
- * - Consistent behavior across server restarts
+ * WebSocket server that handles communication between Cursor and Figma plugin.
+ * Implements a simplified connection system using a single default channel.
  */
 
 // Store clients in a single default channel
@@ -25,16 +12,17 @@ const DEFAULT_CHANNEL = 'default';
 const channels = new Map<string, Set<ServerWebSocket<any>>>();
 channels.set(DEFAULT_CHANNEL, new Set());
 
+const WebSocket = {
+  OPEN: 1
+};
+
 /**
  * Handles new WebSocket connections
- * - Automatically adds client to default channel
- * - Sends welcome message
- * - Sets up disconnect handler
  */
 function handleConnection(ws: ServerWebSocket<any>) {
   console.log("New client connected");
   
-  // Automatically add client to default channel
+  // Add client to default channel
   const defaultClients = channels.get(DEFAULT_CHANNEL)!;
   defaultClients.add(ws);
 
@@ -49,17 +37,6 @@ function handleConnection(ws: ServerWebSocket<any>) {
     console.log("Client disconnected");
     const defaultClients = channels.get(DEFAULT_CHANNEL)!;
     defaultClients.delete(ws);
-
-    // Notify other clients
-    defaultClients.forEach((client) => {
-      if (client.readyState === WebSocket.OPEN) {
-        client.send(JSON.stringify({
-          type: "system",
-          message: "A user has left the channel",
-          channel: DEFAULT_CHANNEL
-        }));
-      }
-    });
   };
 }
 
@@ -85,10 +62,9 @@ const server = Bun.serve({
     });
 
     if (success) {
-      return; // Upgraded to WebSocket
+      return;
     }
 
-    // Return response for non-WebSocket requests
     return new Response("WebSocket server running", {
       headers: {
         "Access-Control-Allow-Origin": "*",
@@ -102,9 +78,8 @@ const server = Bun.serve({
         console.log("Received message from client:", message);
         const data = JSON.parse(message as string);
 
-        // Handle join messages by automatically confirming default channel
+        // Handle join messages
         if (data.type === "join") {
-          console.log("Sending join confirmation for:", data.id);
           ws.send(JSON.stringify({
             type: "system",
             message: {
@@ -116,14 +91,42 @@ const server = Bun.serve({
           return;
         }
 
+        // Handle get_team_components command
+        if (data.type === "message" && data.message?.command === "get_team_components") {
+          // The actual component fetching will be handled by the Figma plugin
+          // We just relay the response back to the client
+          ws.send(JSON.stringify({
+            type: "response",
+            id: data.message.id,
+            result: {
+              message: "Use figma.teamLibrary APIs directly in the plugin"
+            }
+          }));
+          return;
+        }
+
+        // Handle get_all_components command
+        if (data.type === "message" && data.message?.command === "get_all_components") {
+          // Relay the command to the Figma plugin
+          const defaultClients = channels.get(DEFAULT_CHANNEL)!;
+          defaultClients.forEach((client) => {
+            if (client.readyState === WebSocket.OPEN) {
+              client.send(JSON.stringify({
+                type: "broadcast",
+                message: data.message,
+                sender: client === ws ? "You" : "User",
+                channel: DEFAULT_CHANNEL
+              }));
+            }
+          });
+          return;
+        }
+
         // Handle regular messages
         if (data.type === "message") {
           const defaultClients = channels.get(DEFAULT_CHANNEL)!;
-          
-          // Broadcast to all clients
           defaultClients.forEach((client) => {
             if (client.readyState === WebSocket.OPEN) {
-              console.log("Broadcasting message to client:", data.message);
               client.send(JSON.stringify({
                 type: "broadcast",
                 message: data.message,
