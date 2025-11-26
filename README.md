@@ -185,13 +185,13 @@ The MCP server provides the following tools for interacting with Figma:
 
 ### Context Tools
 
+These tools help build context but aren't strictly required:
+
 - `get_document_info` - Get information about the current Figma document
 - `read_my_design` - Get detailed node information about the current selection
 - `get_node_info` - Get detailed information about a specific node
 - `get_nodes_info` - Get detailed information about multiple nodes
 - `get_styles` - Get all available text styles and effect styles from the document
-
-> **Note**: Many tools from the original project have been commented out to focus on token/variable/style application. See `TOOLS.md` for full categorization. Tools can be re-enabled by uncommenting them in `server.ts` if needed.
 
 ### Design Tokens & Variables
 
@@ -212,6 +212,39 @@ The MCP server provides the following tools for interacting with Figma:
 
 - `join_channel` - Join a specific channel to communicate with Figma (plugin uses dedicated channel `figma-mcp-default` automatically)
 
+## Tool Categorization
+
+This MCP server is focused on **applying design tokens, variables, and styles to Figma nodes**. Tools are categorized by their relevance to this core goal:
+
+### Core Tools (Essential)
+
+These 8 tools are required for the primary use case:
+
+1. **`join_channel`** - Connect to Figma plugin channel
+2. **`get_selection`** - Get current selection to apply tokens/styles to
+3. **`get_selection_variables`** - See what variables are currently bound
+4. **`get_variable_collections`** - Get all Figma variables and collections (needed for context)
+5. **`get_styles`** - Get all available text/effect styles (needed for context)
+6. **`set_variable_binding`** - **Core**: Bind a variable to a node property
+7. **`set_text_style`** - **Core**: Apply a text style to a node
+8. **`set_effect_style`** - **Core**: Apply an effect style to a node
+
+### Optional Tools (Commented Out)
+
+Many tools from the original project have been commented out to focus on token/variable/style application. These tools are available but not needed for the primary workflow:
+
+- **Creation Tools**: `create_rectangle`, `create_frame`, `create_text`
+- **Direct Property Setting**: `set_fill_color`, `set_stroke_color`, `set_corner_radius`, `set_padding`, `set_axis_align`, `set_layout_sizing`, `set_item_spacing`, `set_layout_mode` (use `set_variable_binding` instead)
+- **Layout & Manipulation**: `move_node`, `resize_node`, `clone_node`, `delete_node`, `delete_multiple_nodes`
+- **Content Editing**: `set_text_content`, `set_multiple_text_contents`, `scan_text_nodes`, `scan_nodes_by_types`
+- **Component Management**: `get_local_components`, `create_component_instance`, `get_instance_overrides`, `set_instance_overrides`
+- **Prototyping**: `get_reactions`, `set_default_connector`, `create_connections`
+- **Selection & Navigation**: `set_focus`, `set_selections`
+- **Export**: `export_node_as_image`
+- **Annotations**: `get_annotations`, `set_annotation`, `set_multiple_annotations`
+
+> **Note**: All optional tools can be easily re-enabled by uncommenting them in `server.ts` if needed for advanced use cases.
+
 ## Recent Improvements
 
 ### Fixed Channel System
@@ -220,10 +253,9 @@ The MCP server provides the following tools for interacting with Figma:
 - **No Manual Channel Management**: Automatic connection to the dedicated channel - no need to manually join channels
 
 ### Tool Focus
-- **Streamlined Toolset**: Focused on 12 core tools essential for token/variable/style application
+- **Streamlined Toolset**: Focused on 8 core tools + 4 context tools essential for token/variable/style application
 - **Commented Out Non-Core Tools**: Prototyping, annotations, connections, and other tools are available but commented out
 - **Easy Re-enablement**: All tools can be easily re-enabled by uncommenting in `server.ts`
-- **See `TOOLS.md`** for full tool categorization
 
 ### Enhanced Phrase Resolution
 - **Natural Language Support**: Apply tokens using phrases like "surface accent color" or "button md text style"
