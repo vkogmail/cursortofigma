@@ -2,6 +2,16 @@
 
 This project implements a Model Context Protocol (MCP) integration between Cursor AI and Figma, allowing Cursor to communicate with Figma for reading designs and modifying them programmatically.
 
+## 🎨 Design Token & Variable Support
+
+This fork extends the original project with comprehensive support for **design tokens, variables, and styles**:
+
+- **Natural Language Token Application**: Apply design tokens using natural language phrases (e.g., "apply surface accent color", "use button md text style")
+- **Variable Binding**: Bind Figma variables to any node property (colors, spacing, sizing, text properties)
+- **Style Application**: Apply text styles and effect styles (shadows, blurs) to nodes
+- **Phrase Resolution**: Intelligent phrase-to-token mapping with automatic property detection
+- **Design System Context**: Automatic discovery of Figma variables and collections for context-aware token application
+
 https://github.com/user-attachments/assets/129a14d2-ed73-470f-9a4c-2240b2a4885c
 
 ## Project Structure
@@ -128,8 +138,36 @@ bun socket
 1. Start the WebSocket server
 2. Install the MCP server in Cursor
 3. Open Figma and run the Cursor MCP Plugin
-4. Connect the plugin to the WebSocket server by joining a channel using `join_channel`
+4. The plugin automatically connects to the dedicated channel `figma-mcp-default` (no manual channel joining needed!)
 5. Use Cursor to communicate with Figma using the MCP tools
+
+### Design Token Configuration
+
+The MCP server can load design tokens from either:
+- **Local files**: Place your `$themes.json` and `$metadata.json` in a `tokens/` directory
+- **Remote repository**: Set `TOKENS_THEMES_URL` environment variable to a GitHub raw URL
+
+Example:
+```bash
+export TOKENS_THEMES_URL="https://raw.githubusercontent.com/your-org/your-tokens/main/tokens/$themes.json"
+```
+
+### Natural Language Token Application
+
+You can now apply design tokens using natural language:
+
+```
+Apply the surface accent color to the selection's fill
+Use the button md text style on the text layer
+Apply the shadow surface elevated effect to the frame
+Set the padding top to the spacing medium variable
+```
+
+The phrase resolver automatically:
+- Maps your phrase to the correct token path
+- Finds the matching Figma variable or style
+- Suggests the appropriate property name
+- Applies it to your selection
 
 ## MCP Tools
 
@@ -145,79 +183,53 @@ The MCP server provides the following tools for interacting with Figma:
 - `set_focus` - Set focus on a specific node by selecting it and scrolling viewport to it
 - `set_selections` - Set selection to multiple nodes and scroll viewport to show them
 
-### Annotations
+### Context Tools
 
-- `get_annotations` - Get all annotations in the current document or specific node
-- `set_annotation` - Create or update an annotation with markdown support
-- `set_multiple_annotations` - Batch create/update multiple annotations efficiently
-- `scan_nodes_by_types` - Scan for nodes with specific types (useful for finding annotation targets)
+- `get_document_info` - Get information about the current Figma document
+- `read_my_design` - Get detailed node information about the current selection
+- `get_node_info` - Get detailed information about a specific node
+- `get_nodes_info` - Get detailed information about multiple nodes
+- `get_styles` - Get all available text styles and effect styles from the document
 
-### Prototyping & Connections
+> **Note**: Many tools from the original project have been commented out to focus on token/variable/style application. See `TOOLS.md` for full categorization. Tools can be re-enabled by uncommenting them in `server.ts` if needed.
 
-- `get_reactions` - Get all prototype reactions from nodes with visual highlight animation
-- `set_default_connector` - Set a copied FigJam connector as the default connector style for creating connections (must be set before creating connections)
-- `create_connections` - Create FigJam connector lines between nodes, based on prototype flows or custom mapping
+### Design Tokens & Variables
 
-### Creating Elements
+- `get_variable_collections` - Get all Figma variable collections and their variables
+- `get_selection_variables` - Get all variables currently bound to the selection
+- `set_variable_binding` - Bind a variable to a node property (fills, strokes, width, height, padding, spacing, text properties, etc.)
+- `set_text_style` - Apply a Figma text style to a node (applies to all descendant text nodes, skips icon layers)
+- `set_effect_style` - Apply a Figma effect style to a node (shadows, blurs, etc.)
 
-- `create_rectangle` - Create a new rectangle with position, size, and optional name
-- `create_frame` - Create a new frame with position, size, and optional name
-- `create_text` - Create a new text node with customizable font properties
-
-### Modifying text content
-
-- `scan_text_nodes` - Scan text nodes with intelligent chunking for large designs
-- `set_text_content` - Set the text content of a single text node
-- `set_multiple_text_contents` - Batch update multiple text nodes efficiently
-
-### Auto Layout & Spacing
-
-- `set_layout_mode` - Set the layout mode and wrap behavior of a frame (NONE, HORIZONTAL, VERTICAL)
-- `set_padding` - Set padding values for an auto-layout frame (top, right, bottom, left)
-- `set_axis_align` - Set primary and counter axis alignment for auto-layout frames
-- `set_layout_sizing` - Set horizontal and vertical sizing modes for auto-layout frames (FIXED, HUG, FILL)
-- `set_item_spacing` - Set distance between children in an auto-layout frame
-
-### Styling
-
-- `set_fill_color` - Set the fill color of a node (RGBA)
-- `set_stroke_color` - Set the stroke color and weight of a node
-- `set_corner_radius` - Set the corner radius of a node with optional per-corner control
-
-### Layout & Organization
-
-- `move_node` - Move a node to a new position
-- `resize_node` - Resize a node with new dimensions
-- `delete_node` - Delete a node
-- `delete_multiple_nodes` - Delete multiple nodes at once efficiently
-- `clone_node` - Create a copy of an existing node with optional position offset
-
-### Components & Styles
-
-- `get_styles` - Get information about local styles
-- `get_local_components` - Get information about local components
-- `create_component_instance` - Create an instance of a component
-- `get_instance_overrides` - Extract override properties from a selected component instance
-- `set_instance_overrides` - Apply extracted overrides to target instances
-
-### Export & Advanced
-
-- `export_node_as_image` - Export a node as an image (PNG, JPG, SVG, or PDF) - limited support on image currently returning base64 as text
+**Supported Variable Properties:**
+- **Colors**: `fills`, `strokes`
+- **Layout & Sizing**: `width`, `height`, `cornerRadius`, `opacity`
+- **Text**: `fontSize`, `fontFamily`, `fontWeight`, `letterSpacing`, `lineHeight`
+- **Auto-layout Padding**: `paddingTop`, `paddingRight`, `paddingBottom`, `paddingLeft`
+- **Auto-layout Spacing**: `itemSpacing`, `counterAxisSpacing`
 
 ### Connection Management
 
-- `join_channel` - Join a specific channel to communicate with Figma
+- `join_channel` - Join a specific channel to communicate with Figma (plugin uses dedicated channel `figma-mcp-default` automatically)
 
-### MCP Prompts
+## Recent Improvements
 
-The MCP server includes several helper prompts to guide you through complex design tasks:
+### Fixed Channel System
+- **Dedicated Channel**: Plugin now uses a fixed channel name `figma-mcp-default` instead of generating random channels
+- **Persistent Connection**: Channel name is saved and persists across plugin restarts
+- **No Manual Channel Management**: Automatic connection to the dedicated channel - no need to manually join channels
 
-- `design_strategy` - Best practices for working with Figma designs
-- `read_design_strategy` - Best practices for reading Figma designs
-- `text_replacement_strategy` - Systematic approach for replacing text in Figma designs
-- `annotation_conversion_strategy` - Strategy for converting manual annotations to Figma's native annotations
-- `swap_overrides_instances` - Strategy for transferring overrides between component instances in Figma
-- `reaction_to_connector_strategy` - Strategy for converting Figma prototype reactions to connector lines using the output of 'get_reactions', and guiding the use 'create_connections' in sequence
+### Tool Focus
+- **Streamlined Toolset**: Focused on 12 core tools essential for token/variable/style application
+- **Commented Out Non-Core Tools**: Prototyping, annotations, connections, and other tools are available but commented out
+- **Easy Re-enablement**: All tools can be easily re-enabled by uncommenting in `server.ts`
+- **See `TOOLS.md`** for full tool categorization
+
+### Enhanced Phrase Resolution
+- **Natural Language Support**: Apply tokens using phrases like "surface accent color" or "button md text style"
+- **Automatic Property Detection**: System automatically detects which property to bind (fills, paddingTop, textStyleId, etc.)
+- **Style Support**: Resolves both variable references and style references (text styles, effect styles)
+- **Design System Context**: Automatically builds context from Figma variables and design tokens
 
 ## Development
 
@@ -233,39 +245,32 @@ The MCP server includes several helper prompts to guide you through complex desi
 
 ## Best Practices
 
-When working with the Figma MCP:
+When working with the Figma MCP for token/variable/style application:
 
-1. Always join a channel before sending commands
-2. Get document overview using `get_document_info` first
-3. Check current selection with `get_selection` before modifications
-4. Use appropriate creation tools based on needs:
-   - `create_frame` for containers
-   - `create_rectangle` for basic shapes
-   - `create_text` for text elements
-5. Verify changes using `get_node_info`
-6. Use component instances when possible for consistency
-7. Handle errors appropriately as all commands can throw exceptions
-8. For large designs:
-   - Use chunking parameters in `scan_text_nodes`
-   - Monitor progress through WebSocket updates
-   - Implement appropriate error handling
-9. For text operations:
-   - Use batch operations when possible
-   - Consider structural relationships
-   - Verify changes with targeted exports
-10. For converting legacy annotations:
-    - Scan text nodes to identify numbered markers and descriptions
-    - Use `scan_nodes_by_types` to find UI elements that annotations refer to
-    - Match markers with their target elements using path, name, or proximity
-    - Categorize annotations appropriately with `get_annotations`
-    - Create native annotations with `set_multiple_annotations` in batches
-    - Verify all annotations are properly linked to their targets
-    - Delete legacy annotation nodes after successful conversion
-11. Visualize prototype noodles as FigJam connectors:
+1. **Connection**: Plugin automatically connects to `figma-mcp-default` channel - no manual channel joining needed
+2. **Get Context First**: 
+   - Use `get_variable_collections` to see available variables
+   - Use `get_styles` to see available text/effect styles
+   - Use `get_selection_variables` to see what's currently bound
+3. **Natural Language**: Use descriptive phrases when applying tokens:
+   - "apply surface accent color" → binds color variable to fills
+   - "use button md text style" → applies text style
+   - "set padding top to spacing medium" → binds spacing variable to paddingTop
+4. **Property Detection**: The system auto-detects property types, but you can be explicit:
+   - "fill" or "background" → `fills`
+   - "padding" or "padding top" → `paddingTop`
+   - "spacing" or "item spacing" → `itemSpacing`
+   - "text style" or "typography" → `textStyleId`
+   - "shadow" or "effect" → `effectStyleId`
+5. **Verify Changes**: Use `get_selection_variables` to verify variable bindings
+6. **Text Styles**: When applying text styles, icon text layers are automatically skipped
+7. **Variable Types**: Ensure variables match the property type (color variables for fills/strokes, number variables for spacing/sizing)
 
-- Use `get_reactions` to extract prototype flows,
-- set a default connector with `set_default_connector`,
-- and generate connector lines with `create_connections` for clear visual flow mapping.
+### Token Configuration
+
+- **Local Tokens**: Place `$themes.json` and `$metadata.json` in a `tokens/` directory
+- **Remote Tokens**: Set `TOKENS_THEMES_URL` environment variable for remote token loading
+- **Token Mapping**: The system maps token paths (e.g., `color.surface.action.accent.default`) to Figma variable names (e.g., `color/surface/action/accent/default`)
 
 ## License
 
