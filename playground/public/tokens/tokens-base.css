@@ -1,0 +1,42 @@
+:root {
+  /* Color tokens used by AtomsCheckboxBaseTokenized component */
+  /* These are fallback values - update with actual token values from your design system */
+  
+  /* Surface colors */
+  --color-surface-default: #ffffff;
+  --color-surface-action-primary-default: #0850d0;
+  --color-surface-action-primary-hover: #043fa5;
+  --color-surface-action-primary-pressed: #043fa5;
+  --color-surface-action-primary-disabled: #e9e9e9;
+  
+  /* Border colors */
+  --color-border-default: #d3d2d1;
+  --color-border-disabled: #d3d2d1;
+  --color-border-focus: #043fa5;
+  --color-border-action-primary-default: #0850d0;
+  --color-border-action-primary-hover: #043fa5;
+  --color-border-action-primary-pressed: #043fa5;
+  --color-border-action-accent-default: #0850d0;
+  --color-border-action-accent-hover: #043fa5;
+  --color-border-action-accent-pressed: #043fa5;
+  
+  /* Foreground colors */
+  --color-foreground-inverse: #ffffff;
+  --color-foreground-disabled: #b1b1af;
+  --color-foreground-action-primary-inverse-default: #0850d0;
+  --color-foreground-action-primary-inverse-hover: #043fa5;
+  --color-foreground-action-primary-inverse-pressed: #043fa5;
+  --color-foreground-action-primary-inverse-focus: #043fa5;
+  --color-foreground-action-primary-inverse-selected: #0850d0;
+  --color-foreground-action-accent-inverse-default: #0850d0;
+  --color-foreground-action-accent-inverse-hover: #043fa5;
+  --color-foreground-action-accent-inverse-pressed: #043fa5;
+  --color-foreground-action-accent-inverse-focus: #043fa5;
+  --color-foreground-action-accent-inverse-selected: #0850d0;
+  
+  /* Shadow colors */
+  --color-shadow-focusDefault: rgba(6, 80, 208, 0.25);
+  --color-shadow-focusAccent: rgba(6, 80, 208, 0.25);
+  --color-shadow-action-pressed: rgba(4, 63, 165, 0.3);
+}
+
