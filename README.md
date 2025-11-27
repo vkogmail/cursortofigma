@@ -139,9 +139,22 @@ bun socket
 2. Install the MCP server in Cursor
 3. Open Figma and run the Cursor MCP Plugin
 4. The plugin automatically connects to the dedicated channel `figma-mcp-default` (no manual channel joining needed!)
+   - The MCP server automatically joins this channel when it connects (configurable via `FIGMA_DEFAULT_CHANNEL` env var)
 5. Use Cursor to communicate with Figma using the MCP tools
 
-### Design Token Configuration
+### Configuration
+
+#### Figma Channel Configuration
+
+The MCP server automatically connects to a default Figma channel on startup. You can customize this via environment variable:
+
+```bash
+export FIGMA_DEFAULT_CHANNEL="figma-mcp-default"
+```
+
+**Default**: `figma-mcp-default` (matches the Figma plugin's default channel)
+
+#### Design Token Configuration
 
 The MCP server can load design tokens from either:
 - **Local files**: Place your `$themes.json` and `$metadata.json` in a `tokens/` directory
@@ -298,8 +311,13 @@ When working with the Figma MCP for token/variable/style application:
 6. **Text Styles**: When applying text styles, icon text layers are automatically skipped
 7. **Variable Types**: Ensure variables match the property type (color variables for fills/strokes, number variables for spacing/sizing)
 
-### Token Configuration
+### Configuration Reference
 
+#### Figma Channel
+- **Default Channel**: Automatically connects to `figma-mcp-default` channel on startup
+- **Custom Channel**: Set `FIGMA_DEFAULT_CHANNEL` environment variable to use a different channel
+
+#### Token Configuration
 - **Local Tokens**: Place `$themes.json` and `$metadata.json` in a `tokens/` directory
 - **Remote Tokens**: Set `TOKENS_THEMES_URL` environment variable for remote token loading
 - **Token Mapping**: The system maps token paths (e.g., `color.surface.action.accent.default`) to Figma variable names (e.g., `color/surface/action/accent/default`)

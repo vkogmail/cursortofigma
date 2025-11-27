@@ -116,6 +116,11 @@ async function handleCommand(command, params) {
       return await getSelection();
     case "get_selection_variables":
       return await getSelectionVariables();
+    case "describe_component":
+      if (!params || !params.nodeId) {
+        throw new Error("Missing nodeId parameter");
+      }
+      return await describeComponent(params.nodeId);
     case "get_node_info":
       if (!params || !params.nodeId) {
         throw new Error("Missing nodeId parameter");
@@ -536,6 +541,339 @@ async function extractVariablesFromNode(node) {
   }
 
   return out;
+}
+
+// Serialize a Figma node to a structure that can be used to recreate it in React
+function serializeNode(node) {
+  const serialized = {
+    id: node.id,
+    name: node.name,
+    type: node.type,
+  };
+
+  // Common properties
+  if ("visible" in node) serialized.visible = node.visible;
+  if ("opacity" in node && node.opacity !== undefined) serialized.opacity = node.opacity;
+  if ("x" in node) serialized.x = node.x;
+  if ("y" in node) serialized.y = node.y;
+  if ("width" in node) serialized.width = typeof node.width === "number" ? node.width : undefined;
+  if ("height" in node) serialized.height = typeof node.height === "number" ? node.height : undefined;
+  if ("rotation" in node && node.rotation !== undefined) serialized.rotation = node.rotation;
+
+  // Corner radius
+  if ("cornerRadius" in node && node.cornerRadius !== undefined) {
+    if (typeof node.cornerRadius === "number") {
+      serialized.cornerRadius = node.cornerRadius;
+    } else if (node.cornerRadius !== figma.mixed) {
+      serialized.cornerRadius = node.cornerRadius;
+    }
+  }
+
+  // Fills
+  if ("fills" in node && node.fills !== figma.mixed) {
+    serialized.fills = node.fills
+      .filter((fill) => fill.visible !== false)
+      .map((fill) => serializePaint(fill));
+  }
+
+  // Strokes
+  if ("strokes" in node && node.strokes !== figma.mixed) {
+    serialized.strokes = node.strokes
+      .filter((stroke) => stroke.visible !== false)
+      .map((stroke) => serializePaint(stroke));
+  }
+  if ("strokeWeight" in node && node.strokeWeight !== figma.mixed) {
+    serialized.strokeWeight = node.strokeWeight;
+  }
+  if ("strokeAlign" in node) serialized.strokeAlign = node.strokeAlign;
+  if ("strokeCap" in node) serialized.strokeCap = node.strokeCap;
+  if ("strokeJoin" in node) serialized.strokeJoin = node.strokeJoin;
+
+  // Effects
+  if ("effects" in node && node.effects !== figma.mixed) {
+    serialized.effects = node.effects
+      .filter((effect) => effect.visible !== false)
+      .map((effect) => serializeEffect(effect));
+  }
+
+  // Layout properties (for auto-layout frames)
+  if ("layoutMode" in node && node.layoutMode !== "NONE") {
+    serialized.layoutMode = node.layoutMode;
+    serialized.primaryAxisAlignItems = node.primaryAxisAlignItems;
+    serialized.counterAxisAlignItems = node.counterAxisAlignItems;
+    if ("paddingLeft" in node) serialized.paddingLeft = node.paddingLeft;
+    if ("paddingRight" in node) serialized.paddingRight = node.paddingRight;
+    if ("paddingTop" in node) serialized.paddingTop = node.paddingTop;
+    if ("paddingBottom" in node) serialized.paddingBottom = node.paddingBottom;
+    if ("itemSpacing" in node) serialized.itemSpacing = node.itemSpacing;
+    if ("counterAxisSpacing" in node) serialized.counterAxisSpacing = node.counterAxisSpacing;
+  }
+
+  // Text properties
+  if (node.type === "TEXT") {
+    serialized.characters = node.characters;
+    if (node.fontSize !== figma.mixed) serialized.fontSize = node.fontSize;
+    if (node.fontName !== figma.mixed) {
+      serialized.fontFamily = node.fontName.family;
+      serialized.fontWeight = typeof node.fontName.style === "string" ? parseFontWeight(node.fontName.style) : 400;
+    }
+    if (node.lineHeight !== figma.mixed) {
+      if (typeof node.lineHeight === "number") {
+        serialized.lineHeight = { value: node.lineHeight, unit: "PIXELS" };
+      } else {
+        serialized.lineHeight = node.lineHeight;
+      }
+    }
+    if (node.letterSpacing !== figma.mixed) {
+      if (typeof node.letterSpacing === "number") {
+        serialized.letterSpacing = { value: node.letterSpacing, unit: "PIXELS" };
+      } else {
+        serialized.letterSpacing = node.letterSpacing;
+      }
+    }
+    serialized.textAlignHorizontal = node.textAlignHorizontal;
+    serialized.textAlignVertical = node.textAlignVertical;
+  }
+
+  // Vector paths
+  if (node.type === "VECTOR" || node.type === "STAR" || node.type === "POLYGON" || node.type === "ELLIPSE" || node.type === "LINE") {
+    if ("vectorPaths" in node && node.vectorPaths) {
+      serialized.vectorPaths = node.vectorPaths.map((path) => ({
+        windingRule: path.windingRule,
+        data: path.data,
+      }));
+    }
+  }
+
+  // Boolean operations
+  if ("booleanOperation" in node && node.booleanOperation !== "NONE") {
+    serialized.booleanOperation = node.booleanOperation;
+  }
+
+  // Children
+  if ("children" in node && node.children && node.children.length > 0) {
+    serialized.children = node.children.map((child) => serializeNode(child));
+  }
+
+  return serialized;
+}
+
+function serializePaint(paint) {
+  const serialized = {
+    type: paint.type,
+  };
+  if (paint.visible !== undefined) serialized.visible = paint.visible;
+  if (paint.opacity !== undefined) serialized.opacity = paint.opacity;
+
+  if (paint.type === "SOLID") {
+    serialized.color = {
+      r: paint.color.r,
+      g: paint.color.g,
+      b: paint.color.b,
+      a: paint.opacity !== undefined ? paint.opacity : 1,
+    };
+  } else if (paint.type.includes("GRADIENT")) {
+    serialized.gradientStops = paint.gradientStops.map((stop) => ({
+      position: stop.position,
+      color: {
+        r: stop.color.r,
+        g: stop.color.g,
+        b: stop.color.b,
+        a: stop.color.a !== undefined ? stop.color.a : 1,
+      },
+    }));
+    if (paint.gradientTransform) serialized.gradientTransform = paint.gradientTransform;
+  } else if (paint.type === "IMAGE" || paint.type === "VIDEO") {
+    serialized.scaleMode = paint.scaleMode;
+    if (paint.imageHash) serialized.imageHash = paint.imageHash;
+    if (paint.imageTransform) serialized.imageTransform = paint.imageTransform;
+    if (paint.videoHash) serialized.videoHash = paint.videoHash;
+    if (paint.videoTransform) serialized.videoTransform = paint.videoTransform;
+  }
+
+  return serialized;
+}
+
+function serializeEffect(effect) {
+  const serialized = {
+    type: effect.type,
+    radius: effect.radius,
+  };
+  if (effect.visible !== undefined) serialized.visible = effect.visible;
+  if (effect.color) {
+    serialized.color = {
+      r: effect.color.r,
+      g: effect.color.g,
+      b: effect.color.b,
+      a: effect.color.a !== undefined ? effect.color.a : 1,
+    };
+  }
+  if (effect.offset) {
+    serialized.offset = { x: effect.offset.x, y: effect.offset.y };
+  }
+  if (effect.spread !== undefined) serialized.spread = effect.spread;
+  return serialized;
+}
+
+function parseFontWeight(style) {
+  const weights = {
+    thin: 100,
+    "extra-light": 200,
+    light: 300,
+    regular: 400,
+    medium: 500,
+    "semi-bold": 600,
+    bold: 700,
+    "extra-bold": 800,
+    black: 900,
+  };
+  const lower = style.toLowerCase();
+  for (const [key, value] of Object.entries(weights)) {
+    if (lower.includes(key)) return value;
+  }
+  return 400;
+}
+
+// --- Generic component description helper ---
+// This is intentionally generic so it can describe *any* Figma component,
+// component set, or instance, without baking in checkbox/button/etc. concepts.
+async function describeComponent(nodeId) {
+  const node = await figma.getNodeByIdAsync(nodeId);
+  if (!node) {
+    throw new Error(`Node not found: ${nodeId}`);
+  }
+
+  let instance = null;
+  let component = null;
+  let componentSet = null;
+
+  if (node.type === "INSTANCE") {
+    instance = node;
+    try {
+      component = await node.getMainComponentAsync();
+    } catch (e) {
+      // getMainComponentAsync may throw on some legacy instances
+      component = node.mainComponent || null;
+    }
+    if (component && component.parent && component.parent.type === "COMPONENT_SET") {
+      componentSet = component.parent;
+    }
+  } else if (node.type === "COMPONENT") {
+    component = node;
+    if (node.parent && node.parent.type === "COMPONENT_SET") {
+      componentSet = node.parent;
+    }
+  } else if (node.type === "COMPONENT_SET") {
+    componentSet = node;
+  }
+
+  // Collect generic props: variant axes (from component set) + instance componentProperties
+  const props = [];
+
+  if (componentSet && componentSet.variantGroupProperties) {
+    const groups = componentSet.variantGroupProperties;
+    for (const name in groups) {
+      const group = groups[name];
+      props.push({
+        name,
+        kind: "variant",
+        options: Array.isArray(group.values) ? group.values : [],
+        defaultValue:
+          typeof group.defaultValue !== "undefined" ? group.defaultValue : null,
+      });
+    }
+  }
+
+  if (instance && instance.componentProperties) {
+    const cp = instance.componentProperties;
+    for (const name in cp) {
+      const def = cp[name];
+      let kind = "unknown";
+      switch (def.type) {
+        case "BOOLEAN":
+          kind = "boolean";
+          break;
+        case "TEXT":
+          kind = "text";
+          break;
+        case "NUMBER":
+          kind = "number";
+          break;
+        case "INSTANCE_SWAP":
+          kind = "instanceSwap";
+          break;
+      }
+      props.push({
+        name,
+        kind,
+        options: def.variantOptions || undefined,
+        defaultValue:
+          typeof def.value !== "undefined" ? def.value : null,
+      });
+    }
+  }
+
+  // Build variants list. If we have a component set, describe all of its components.
+  // Otherwise, fall back to a single "variant" for the resolved component/instance.
+  const variants = [];
+  let componentsToDescribe = [];
+
+  if (componentSet && componentSet.children) {
+    componentsToDescribe = componentSet.children.filter(
+      (child) => child.type === "COMPONENT"
+    );
+  } else if (component) {
+    componentsToDescribe = [component];
+  } else if (instance) {
+    componentsToDescribe = [instance];
+  }
+
+  for (const comp of componentsToDescribe) {
+    const variantProps = comp.variantProperties || {};
+
+    // Reuse the existing variable extraction pipeline so the MCP side
+    // can later map these variable IDs to tokens using $themes.json.
+    const allNodes = collectNodes([comp]);
+    const variableUsage = [];
+
+    for (const n of allNodes) {
+      const variables = await extractVariablesFromNode(n);
+      if (!variables.length) continue;
+      variableUsage.push({
+        nodeId: n.id,
+        nodeName: n.name,
+        variables,
+      });
+    }
+
+    // Serialize the full node structure for this variant
+    const structure = serializeNode(comp);
+
+    variants.push({
+      id: comp.id,
+      name: comp.name,
+      props: variantProps,
+      variableUsage,
+      structure,
+    });
+  }
+
+  const root = componentSet || component || instance || node;
+
+  return {
+    id: root.id,
+    name: root.name,
+    kind: componentSet
+      ? "componentSet"
+      : component
+      ? "component"
+      : instance
+      ? "instance"
+      : "other",
+    baseNodeType: node.type,
+    props,
+    variants,
+  };
 }
 
 async function getSelectionVariables() {

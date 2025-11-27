@@ -2,3 +2,10 @@ node_modules/
 .cursor/
 dist/
 docs/
+*.log
+.DS_Store
+*.tsbuildinfo
+
+# Nested build artifacts (should not exist)
+src/talk_to_figma_mcp/dist/
+src/talk_to_figma_mcp/bun.lock

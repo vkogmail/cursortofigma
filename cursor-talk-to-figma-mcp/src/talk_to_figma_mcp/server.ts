@@ -5,6 +5,14 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import WebSocket from "ws";
 import { v4 as uuidv4 } from "uuid";
+import * as fs from "fs";
+import * as path from "path";
+import type { ComponentDescription } from "./componentDescription.js";
+import {
+  mapComponentDescriptionToTokenized,
+  generateReactComponentFromTokenized,
+} from "./mapComponentDescriptionToTokens.js";
+import { loadTokensConfigFromEnv } from "./tokensConfig.js";
 
 // Define TypeScript interfaces for Figma responses
 interface FigmaResponse {
@@ -84,6 +92,9 @@ const args = process.argv.slice(2);
 const serverArg = args.find(arg => arg.startsWith('--server='));
 const serverUrl = serverArg ? serverArg.split('=')[1] : 'localhost';
 const WS_URL = serverUrl === 'localhost' ? `ws://${serverUrl}` : `wss://${serverUrl}`;
+
+// Default Figma channel configuration
+const DEFAULT_FIGMA_CHANNEL = process.env.FIGMA_DEFAULT_CHANNEL || "figma-mcp-default";
 
 // ============================================================================
 // TOOL ORGANIZATION
@@ -196,6 +207,427 @@ server.tool(
           {
             type: "text",
             text: `Error getting selection variables: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          },
+        ],
+      };
+    }
+  }
+);
+
+// Export Selection as PNG Tool
+server.tool(
+  "export_selection_png",
+  "Export the current Figma selection as a PNG image. Gets the first selected node and exports it. Optionally saves to notes directory for visual verification.",
+  {
+    scale: z
+      .number()
+      .positive()
+      .optional()
+      .describe("Export scale (default: 1, use 2 for retina/high-DPI)"),
+    saveToFile: z
+      .boolean()
+      .optional()
+      .describe("Whether to save the PNG to notes/figma-selection.png (default: true)"),
+    filename: z
+      .string()
+      .optional()
+      .describe("Custom filename for saved PNG (default: figma-selection.png)"),
+  },
+  async ({ scale, saveToFile = true, filename }: any) => {
+    try {
+      // Get current selection
+      const selection = (await sendCommandToFigma("get_selection", {})) as {
+        selectionCount: number;
+        selection: { id: string; name: string; type: string; visible: boolean }[];
+      };
+
+      if (!selection.selectionCount || selection.selection.length === 0) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "No nodes selected in Figma. Please select a node to export.",
+            },
+          ],
+        };
+      }
+
+      const firstNode = selection.selection[0];
+
+      // Export the first selected node as PNG
+      const result = await sendCommandToFigma("export_node_as_image", {
+        nodeId: firstNode.id,
+        format: "PNG",
+        scale: scale || 1,
+      });
+
+      const typedResult = result as {
+        nodeId: string;
+        format: string;
+        scale: number;
+        mimeType: string;
+        imageData: string; // base64 encoded
+      };
+
+      // Optionally save to file
+      if (saveToFile) {
+        try {
+          // Try to find project root by looking for notes directory
+          // Start from process.cwd() and go up until we find it, or use a relative path
+          let projectRoot = process.cwd();
+          let notesDir = path.join(projectRoot, "notes");
+          
+          // If notes doesn't exist in cwd, try going up a few levels
+          if (!fs.existsSync(notesDir)) {
+            // Try going up from current working directory
+            const possibleRoots = [
+              path.resolve(projectRoot, ".."),
+              path.resolve(projectRoot, "../.."),
+              path.resolve(projectRoot, "../../.."),
+            ];
+            for (const possibleRoot of possibleRoots) {
+              const possibleNotes = path.join(possibleRoot, "notes");
+              if (fs.existsSync(possibleNotes)) {
+                projectRoot = possibleRoot;
+                notesDir = possibleNotes;
+                break;
+              }
+            }
+          }
+          
+          const outputFilename = filename || "figma-selection.png";
+          const outputPath = path.join(notesDir, outputFilename);
+
+          // Ensure notes directory exists
+          if (!fs.existsSync(notesDir)) {
+            fs.mkdirSync(notesDir, { recursive: true });
+          }
+
+          // Decode base64 and write to file
+          const imageBuffer = Buffer.from(typedResult.imageData, "base64");
+          fs.writeFileSync(outputPath, imageBuffer);
+
+          return {
+            content: [
+              {
+                type: "image",
+                data: typedResult.imageData,
+                mimeType: typedResult.mimeType || "image/png",
+              },
+              {
+                type: "text",
+                text: `✅ Exported selection as PNG (scale: ${typedResult.scale})\n📁 Saved to: ${outputPath}\n📦 Node: ${firstNode.name} (${firstNode.type})`,
+              },
+            ],
+          };
+        } catch (fileError) {
+          // If file save fails, still return the image data
+          return {
+            content: [
+              {
+                type: "image",
+                data: typedResult.imageData,
+                mimeType: typedResult.mimeType || "image/png",
+              },
+              {
+                type: "text",
+                text: `✅ Exported selection as PNG (scale: ${typedResult.scale})\n⚠️  Failed to save file: ${fileError instanceof Error ? fileError.message : String(fileError)}\n📦 Node: ${firstNode.name} (${firstNode.type})`,
+              },
+            ],
+          };
+        }
+      }
+
+      // Return image data without saving
+      return {
+        content: [
+          {
+            type: "image",
+            data: typedResult.imageData,
+            mimeType: typedResult.mimeType || "image/png",
+          },
+          {
+            type: "text",
+            text: `✅ Exported selection as PNG (scale: ${typedResult.scale})\n📦 Node: ${firstNode.name} (${firstNode.type})`,
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error exporting selection as PNG: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          },
+        ],
+      };
+    }
+  }
+);
+
+// Describe currently selected component (high-level helper)
+server.tool(
+  "describe_selection_component",
+  "Describe the first selected Figma node as a component, if applicable (uses get_selection + describe_component)",
+  {},
+  async () => {
+    try {
+      const selection = (await sendCommandToFigma("get_selection", {})) as {
+        selectionCount: number;
+        selection: { id: string; name: string; type: string; visible: boolean }[];
+      };
+
+      if (!selection.selectionCount || selection.selection.length === 0) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "No nodes selected in Figma. Please select an instance, component, or component set.",
+            },
+          ],
+        };
+      }
+
+      const first = selection.selection[0];
+
+      const description = await sendCommandToFigma("describe_component", {
+        nodeId: first.id,
+      });
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              selection: first,
+              description,
+            }),
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error describing selected component: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          },
+        ],
+      };
+    }
+  }
+);
+
+// Generate React component code for the first selected Figma component/instance
+server.tool(
+  "generate_selection_component_react",
+  "Generate a React component skeleton (using design tokens) for the first selected Figma component or instance",
+  {
+    componentName: z
+      .string()
+      .optional()
+      .describe("Optional explicit React component name (defaults to the Figma component name)"),
+  },
+  async (args) => {
+    try {
+      const selection = (await sendCommandToFigma("get_selection", {})) as {
+        selectionCount: number;
+        selection: { id: string; name: string; type: string; visible: boolean }[];
+      };
+
+      if (!selection.selectionCount || selection.selection.length === 0) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "No nodes selected in Figma. Please select an instance, component, or component set.",
+            },
+          ],
+        };
+      }
+
+      const first = selection.selection[0];
+
+      const rawDescription = (await sendCommandToFigma("describe_component", {
+        nodeId: first.id,
+      })) as ComponentDescription;
+
+      // Load token config (now includes cssUrls)
+      const tokensConfig = loadTokensConfigFromEnv();
+
+      const tokenized = await mapComponentDescriptionToTokenized(rawDescription, {
+        tokensConfig,
+      });
+
+      const reactSource = generateReactComponentFromTokenized(tokenized, {
+        componentName: args?.componentName,
+        tokensConfig, // Pass config so generator can include CSS import hints
+      });
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: reactSource,
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error generating React component for selected node: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          },
+        ],
+      };
+    }
+  }
+);
+
+// Describe Component Tool
+server.tool(
+  "describe_component",
+  "Describe a Figma component / component set / instance, including variant axes and variable usage",
+  {
+    nodeId: {
+      type: "string",
+      description: "ID of the node to describe (instance, component, or component set)",
+    },
+  },
+  async (args) => {
+    try {
+      const params = {
+        nodeId: String(args.nodeId),
+      };
+      const result = await sendCommandToFigma("describe_component", params);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result),
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error describing component: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          },
+        ],
+      };
+    }
+  }
+);
+
+// Describe layout-focused view of the first selected component/instance
+// This surfaces explicit Auto Layout numbers (layoutMode, padding, spacing, etc.)
+// for each node, including nested children, without requiring variables/tokens.
+server.tool(
+  "describe_selection_layout",
+  "Summarize Auto Layout properties (layoutMode, paddings, spacing, alignment) for the first selected component or instance, including nested nodes",
+  {},
+  async () => {
+    try {
+      const selection = (await sendCommandToFigma("get_selection", {})) as {
+        selectionCount: number;
+        selection: { id: string; name: string; type: string; visible: boolean }[];
+      };
+
+      if (!selection.selectionCount || selection.selection.length === 0) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "No nodes selected in Figma. Please select an instance, component, or component set.",
+            },
+          ],
+        };
+      }
+
+      const first = selection.selection[0];
+
+      const rawDescription = (await sendCommandToFigma("describe_component", {
+        nodeId: first.id,
+      })) as ComponentDescription;
+
+      function extractLayout(node: any): any {
+        const layout: any = {
+          id: node.id,
+          name: node.name,
+          type: node.type,
+        };
+
+        if (typeof node.x === "number") layout.x = node.x;
+        if (typeof node.y === "number") layout.y = node.y;
+        if (typeof node.width === "number") layout.width = node.width;
+        if (typeof node.height === "number") layout.height = node.height;
+
+        if (node.layoutMode && node.layoutMode !== "NONE") {
+          layout.layoutMode = node.layoutMode;
+          if (node.primaryAxisAlignItems)
+            layout.primaryAxisAlignItems = node.primaryAxisAlignItems;
+          if (node.counterAxisAlignItems)
+            layout.counterAxisAlignItems = node.counterAxisAlignItems;
+          if (typeof node.paddingLeft === "number")
+            layout.paddingLeft = node.paddingLeft;
+          if (typeof node.paddingRight === "number")
+            layout.paddingRight = node.paddingRight;
+          if (typeof node.paddingTop === "number")
+            layout.paddingTop = node.paddingTop;
+          if (typeof node.paddingBottom === "number")
+            layout.paddingBottom = node.paddingBottom;
+          if (typeof node.itemSpacing === "number")
+            layout.itemSpacing = node.itemSpacing;
+          if (typeof node.counterAxisSpacing === "number")
+            layout.counterAxisSpacing = node.counterAxisSpacing;
+        }
+
+        if (Array.isArray(node.children) && node.children.length > 0) {
+          layout.children = node.children.map((child: any) =>
+            extractLayout(child)
+          );
+        }
+
+        return layout;
+      }
+
+      const variantsWithLayout = rawDescription.variants.map((variant) => ({
+        id: variant.id,
+        name: variant.name,
+        props: variant.props,
+        layoutTree: variant.structure ? extractLayout(variant.structure) : null,
+      }));
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              selection: first,
+              variants: variantsWithLayout,
+            }),
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error describing selection layout: ${
               error instanceof Error ? error.message : String(error)
             }`,
           },
@@ -2683,6 +3115,11 @@ server.tool(
     }
   }
 );
+*/
+
+// ============================================================================
+// CORE TOOLS - Variable Collections, Styles
+// ============================================================================
 
 // Export Variable Collections Tool
 server.tool(
@@ -2910,6 +3347,7 @@ type FigmaCommand =
   | "get_document_info"
   | "get_selection"
   | "get_selection_variables"
+  | "describe_component"
   | "get_node_info"
   | "get_nodes_info"
   | "read_my_design"
@@ -2957,6 +3395,7 @@ type CommandParams = {
   get_document_info: Record<string, never>;
   get_selection: Record<string, never>;
   get_selection_variables: Record<string, never>;
+  describe_component: { nodeId: string };
   get_node_info: { nodeId: string };
   get_nodes_info: { nodeIds: string[] };
   create_rectangle: {
@@ -3160,10 +3599,18 @@ function connectToFigma(port: number = 3055) {
   logger.info(`Connecting to Figma socket server at ${wsUrl}...`);
   ws = new WebSocket(wsUrl);
 
-  ws.on('open', () => {
-    logger.info('Connected to Figma socket server');
+  ws.on('open', async () => {
+    logger.info(`Connected to Figma socket server on port ${port}`);
     // Reset channel on new connection
     currentChannel = null;
+    
+    // Automatically join the default channel
+    try {
+      await joinChannel(DEFAULT_FIGMA_CHANNEL);
+      logger.info(`Connected to server on port ${port} in channel: ${DEFAULT_FIGMA_CHANNEL}`);
+    } catch (error) {
+      logger.warn(`Failed to auto-join default channel "${DEFAULT_FIGMA_CHANNEL}": ${error instanceof Error ? error.message : String(error)}`);
+    }
   });
 
   ws.on("message", (data: any) => {
@@ -3358,32 +3805,19 @@ server.tool(
   "join_channel",
   "Join a specific channel to communicate with Figma",
   {
-    channel: z.string().describe("The name of the channel to join").default(""),
+    channel: z.string().describe(`The name of the channel to join (default: "${DEFAULT_FIGMA_CHANNEL}")`).default(""),
   },
   async ({ channel }: any) => {
     try {
-      if (!channel) {
-        // If no channel provided, ask the user for input
-        return {
-          content: [
-            {
-              type: "text",
-              text: "Please provide a channel name to join:",
-            },
-          ],
-          followUp: {
-            tool: "join_channel",
-            description: "Join the specified channel",
-          },
-        };
-      }
+      // Use default channel if none provided
+      const channelName = channel || DEFAULT_FIGMA_CHANNEL;
 
-      await joinChannel(channel);
+      await joinChannel(channelName);
       return {
         content: [
           {
             type: "text",
-            text: `Successfully joined channel: ${channel}`,
+            text: `Connected to server on port 3055 in channel: ${channelName}`,
           },
         ],
       };
