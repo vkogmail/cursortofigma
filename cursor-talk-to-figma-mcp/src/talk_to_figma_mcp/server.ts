@@ -13,6 +13,11 @@ import {
   generateReactComponentFromTokenized,
 } from "./mapComponentDescriptionToTokens.js";
 import { loadTokensConfigFromEnv } from "./tokensConfig.js";
+import {
+  matchComponentValuesToTokens,
+  matchColorToToken,
+  matchSpacingToToken,
+} from "./valueToTokenMatcher.js";
 
 // Define TypeScript interfaces for Figma responses
 interface FigmaResponse {
@@ -2927,6 +2932,11 @@ server.tool(
   }
 );
 
+// ============================================================================
+// OPTIONAL TOOLS - Commented out (prototyping & connections)
+// ============================================================================
+
+/*
 // Set Variable Binding Tool
 server.tool(
   "set_variable_binding",
@@ -3003,6 +3013,872 @@ server.tool(
   }
 );
 
+// Auto-apply Tokens Tool (Reverse Tokenization)
+server.tool(
+  "auto_apply_tokens",
+  "Automatically match and apply design tokens to a component that has no variables applied. Fetches actual values from Figma, matches them to the closest tokens based on value similarity and component description, then applies those tokens. This is useful for tokenizing existing components.",
+  {
+    componentDescription: z
+      .string()
+      .optional()
+      .describe("Optional description of the component to help with semantic token matching (e.g. 'primary button', 'card container')"),
+    nodeId: z
+      .string()
+      .optional()
+      .describe("Optional specific node ID. If not provided, uses the current selection."),
+    applyTokens: z
+      .boolean()
+      .optional()
+      .default(true)
+      .describe("Whether to actually apply the matched tokens to Figma (default: true). If false, only returns matches without applying."),
+    tolerance: z
+      .number()
+      .optional()
+      .default(2)
+      .describe("Tolerance for numeric value matching in pixels (default: 2px). Used for spacing, radius, etc."),
+  },
+  async ({ componentDescription, nodeId, applyTokens = true, tolerance = 2 }: any) => {
+    try {
+      // Get node data
+      let nodeData: any;
+      let targetNodeId: string;
+
+      if (nodeId) {
+        const result = await sendCommandToFigma("get_node_info", { nodeId });
+        // get_node_info returns the node data directly (filterFigmaNode result)
+        nodeData = result;
+        targetNodeId = nodeId;
+      } else {
+        const selection = (await sendCommandToFigma("get_selection", {})) as {
+          selectionCount: number;
+          selection: { id: string; name: string; type: string; visible: boolean }[];
+        };
+
+        if (!selection.selectionCount || selection.selection.length === 0) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "No nodes selected in Figma. Please select a node to tokenize.",
+              },
+            ],
+          };
+        }
+
+        const firstNode = selection.selection[0];
+        targetNodeId = firstNode.id;
+        const result = await sendCommandToFigma("get_node_info", { nodeId: targetNodeId });
+        // get_node_info returns the node data directly (filterFigmaNode result)
+        nodeData = result;
+      }
+
+      if (!nodeData || !nodeData.id) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Could not fetch node data for node ${targetNodeId}. NodeData type: ${typeof nodeData}, has id: ${nodeData?.id ? 'yes' : 'no'}`,
+            },
+          ],
+        };
+      }
+
+      // Get available variables first (needed for matching)
+      // export_variable_collections returns an array of collections directly
+      const collectionsArray = (await sendCommandToFigma("export_variable_collections", {})) as Array<{
+          id: string;
+          name: string;
+          modes: Array<{ modeId: string; name: string }>;
+          variables: Array<{
+            id: string;
+            name: string;
+            type: string;
+            valuesByMode: Record<string, any>;
+          }>;
+        }>;
+
+      // Flatten all variables into a single array for matching
+      const allVariables = collectionsArray.flatMap((collection) =>
+        collection.variables.map((variable) => ({
+          ...variable,
+          collectionId: collection.id,
+        }))
+      );
+
+      // Extract collection info for filtering
+      const collections = collectionsArray.map((collection) => ({
+        id: collection.id,
+        name: collection.name,
+      }));
+
+      // Extract actual values from node data
+      const actualValues: any = {
+        fills: nodeData.fills,
+        strokes: nodeData.strokes,
+        cornerRadius: nodeData.cornerRadius,
+        paddingTop: nodeData.paddingTop,
+        paddingRight: nodeData.paddingRight,
+        paddingBottom: nodeData.paddingBottom,
+        paddingLeft: nodeData.paddingLeft,
+        itemSpacing: nodeData.itemSpacing,
+        fontSize: nodeData.fontSize,
+        fontWeight: nodeData.fontWeight,
+        // Add more properties as needed
+      };
+
+      // Match values to tokens using Figma variables
+      // NOTE: Only matches against theme tokens, never foundation tokens
+      const matches = await matchComponentValuesToTokens(
+        actualValues,
+        allVariables,
+        collections,
+        componentDescription,
+        tolerance
+      );
+
+      const appliedTokens: Array<{
+        property: string;
+        variableName: string;
+        variableId: string;
+        confidence: number;
+      }> = [];
+      const failedMatches: Array<{
+        property: string;
+        reason: string;
+      }> = [];
+
+      // Apply matched tokens
+      if (applyTokens) {
+        for (const { property, match } of matches) {
+          if (!match) {
+            failedMatches.push({
+              property,
+              reason: "No matching token found",
+            });
+            continue;
+          }
+
+          // Find the variable in Figma
+          let variableId: string | undefined;
+          let collectionId: string | undefined;
+
+          for (const collection of collectionsArray) {
+            const variable = collection.variables.find(
+              (v) => v.name === match.variableName
+            );
+            if (variable) {
+              variableId = variable.id;
+              collectionId = collection.id;
+              break;
+            }
+          }
+
+          if (!variableId) {
+            failedMatches.push({
+              property,
+              reason: `Variable "${match.variableName}" not found in Figma`,
+            });
+            continue;
+          }
+
+          // Apply the token
+          try {
+            const bindResult = await sendCommandToFigma("set_variable_binding", {
+              nodeId: targetNodeId,
+              propertyName: property,
+              variableId,
+              collectionId,
+            });
+
+            if ((bindResult as any).success) {
+              appliedTokens.push({
+                property,
+                variableName: match.variableName,
+                variableId,
+                confidence: match.confidence,
+              });
+            } else {
+              failedMatches.push({
+                property,
+                reason: "Failed to bind variable",
+              });
+            }
+          } catch (error) {
+            failedMatches.push({
+              property,
+              reason: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
+      }
+
+      // Build response
+      const response: string[] = [];
+      response.push(`Token matching for node "${nodeData.name || targetNodeId}":`);
+      response.push("");
+
+      if (nodeMatchesById.size > 0) {
+        response.push("Matches found:");
+        for (const [nodeKey, nodeResult] of nodeMatchesById.entries()) {
+          const { nodeName, matches } = nodeResult;
+          response.push(`- Node "${nodeName || nodeKey}":`);
+          matches.forEach(({ property, match }) => {
+            if (match) {
+              response.push(
+                `    ${property}: ${match.variableName} (confidence: ${(match.confidence * 100).toFixed(
+                  0
+                )}%, type: ${match.matchType})`
+              );
+            } else {
+              response.push(`    ${property}: No match found`);
+            }
+          });
+          response.push("");
+        }
+      }
+
+      if (applyTokens) {
+        if (appliedTokens.length > 0) {
+          response.push(`Successfully applied ${appliedTokens.length} tokens:`);
+          appliedTokens.forEach(({ property, variableName, confidence }) => {
+            response.push(
+              `  ${property} → ${variableName} (${(confidence * 100).toFixed(0)}% confidence)`
+            );
+          });
+          response.push("");
+        }
+
+        if (failedMatches.length > 0) {
+          response.push(`Failed to apply ${failedMatches.length} tokens:`);
+          failedMatches.forEach(({ property, reason }) => {
+            response.push(`  ${property}: ${reason}`);
+          });
+        }
+      } else {
+        response.push("(Tokens not applied - set applyTokens=true to apply)");
+      }
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: response.join("\n"),
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error auto-applying tokens: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+      };
+    }
+  }
+);
+*/
+
+// ============================================================================
+// CORE TOOLS - Variable Binding & Auto Tokenization
+// ============================================================================
+
+// Set Variable Binding Tool
+server.tool(
+  "set_variable_binding",
+  "Bind an existing Figma variable to a property on a node. Supported properties: Colors: 'fills', 'strokes' (bind color variables to paint colors). Layout & Sizing: 'width', 'height', 'cornerRadius', 'opacity'. Text: 'fontSize', 'fontFamily', 'fontWeight', 'letterSpacing', 'lineHeight' (text nodes only). Auto-layout Padding: 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft' (auto-layout frames only). Auto-layout Spacing: 'itemSpacing' (space between children), 'counterAxisSpacing' (space between wrapped rows/columns, requires layoutWrap='WRAP'). You can provide either a variableId, or a variableName (optionally with collectionId).",
+  {
+    nodeId: z.string().describe("The ID of the node to bind the variable to"),
+    propertyName: z
+      .string()
+      .describe("The property name to bind. Colors: 'fills', 'strokes'. Layout: 'width', 'height', 'cornerRadius', 'opacity'. Text: 'fontSize', 'fontFamily', 'fontWeight', 'letterSpacing', 'lineHeight'. Auto-layout Padding: 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft'. Auto-layout Spacing: 'itemSpacing', 'counterAxisSpacing'."),
+    variableId: z
+      .string()
+      .optional()
+      .describe("The ID of the Figma variable to bind. Optional if variableName is provided."),
+    variableName: z
+      .string()
+      .optional()
+      .describe("The name of the Figma variable to bind (e.g. 'color/surface/action/accent/default')."),
+    collectionId: z
+      .string()
+      .optional()
+      .describe("Optional Figma collection ID (VariableCollectionId:...) to disambiguate variableName lookups."),
+  },
+  async ({ nodeId, propertyName, variableId, variableName, collectionId }: any) => {
+    try {
+      const result = await sendCommandToFigma("set_variable_binding", {
+        nodeId,
+        propertyName,
+        variableId,
+        variableName,
+        collectionId,
+      });
+      const typedResult = result as {
+        success: boolean;
+        nodeId: string;
+        propertyName: string;
+        variableId: string;
+        variableName: string;
+        collectionId?: string;
+      };
+
+      if (!typedResult || !typedResult.success) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Failed to bind variable ${
+                variableId || variableName || "<?>"
+              } to ${propertyName} on node ${nodeId}`,
+            },
+          ],
+        };
+      }
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Bound variable "${typedResult.variableName}" (${typedResult.variableId}) to property "${typedResult.propertyName}" on node ${typedResult.nodeId}${
+              typedResult.collectionId ? ` in collection ${typedResult.collectionId}` : ""
+            }`,
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error setting variable binding: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+      };
+    }
+  }
+);
+
+// Auto-apply Tokens Tool (Reverse Tokenization)
+server.tool(
+  "auto_apply_tokens",
+  "Automatically match and apply design tokens to a component that has no variables applied. Fetches actual values from Figma, matches them to the closest tokens based on value similarity and component description, then applies those tokens. This is useful for tokenizing existing components.",
+  {
+    componentDescription: z
+      .string()
+      .optional()
+      .describe("Optional description of the component to help with semantic token matching (e.g. 'primary button', 'card container')"),
+    nodeId: z
+      .string()
+      .optional()
+      .describe("Optional specific node ID. If not provided, uses the current selection."),
+    applyTokens: z
+      .boolean()
+      .optional()
+      .default(true)
+      .describe("Whether to actually apply the matched tokens to Figma (default: true). If false, only returns matches without applying."),
+    tolerance: z
+      .number()
+      .optional()
+      .default(2)
+      .describe("Tolerance for numeric value matching in pixels (default: 2px). Used for spacing, radius, etc."),
+  },
+  async ({ componentDescription, nodeId, applyTokens = true, tolerance = 2 }: any) => {
+    try {
+      // Get node data
+      let nodeData: any;
+      let targetNodeId: string;
+
+      if (nodeId) {
+        const result = await sendCommandToFigma("get_node_info", { nodeId });
+        // get_node_info returns the node data directly (filterFigmaNode result)
+        nodeData = result;
+        targetNodeId = nodeId;
+      } else {
+        const selection = (await sendCommandToFigma("get_selection", {})) as {
+          selectionCount: number;
+          selection: { id: string; name: string; type: string; visible: boolean }[];
+        };
+
+        if (!selection.selectionCount || selection.selection.length === 0) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "No nodes selected in Figma. Please select a node to tokenize.",
+              },
+            ],
+          };
+        }
+
+        const firstNode = selection.selection[0];
+        targetNodeId = firstNode.id;
+        const result = await sendCommandToFigma("get_node_info", { nodeId: targetNodeId });
+        // get_node_info returns the node data directly (filterFigmaNode result)
+        nodeData = result;
+      }
+
+      if (!nodeData || !nodeData.id) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Could not fetch node data for node ${targetNodeId}. NodeData type: ${typeof nodeData}, has id: ${nodeData?.id ? 'yes' : 'no'}`,
+            },
+          ],
+        };
+      }
+
+      // Helper to derive a more specific description per node, based on its name
+      const buildNodeDescription = (baseDescription: string | undefined, nodeName: string): string => {
+        const parts: string[] = [];
+        if (baseDescription) parts.push(baseDescription);
+
+        const lower = nodeName.toLowerCase();
+
+        // Very small heuristic mapper from names to status kinds
+        let statusKind: string | null = null;
+        if (lower.includes("failed") || lower.includes("error")) statusKind = "danger";
+        else if (lower.includes("tentative")) statusKind = "warning";
+        else if (lower.includes("planned")) statusKind = "success";
+        else if (lower.includes("reserved")) statusKind = "info";
+        else if (lower.includes("unavailable")) statusKind = "neutral";
+        else if (lower.includes("absence")) statusKind = "warning";
+        else if (lower.includes("leave")) statusKind = "neutral";
+
+        if (statusKind) {
+          parts.push(`status ${statusKind}`);
+        } else if (!baseDescription) {
+          // Fall back to node name if no explicit description was provided
+          parts.push(nodeName);
+        }
+
+        return parts.join(" ").trim();
+      };
+
+      /**
+       * Build the list of nodes to process:
+       * - If a COMPONENT_SET is selected, process all child COMPONENTs.
+       * - Otherwise, just process the single target node.
+       */
+      const nodesToProcess: Array<{
+        nodeId: string;
+        nodeName: string;
+        nodeData: any;
+        description: string;
+      }> = [];
+
+      if (nodeData.type === "COMPONENT_SET" && Array.isArray(nodeData.children) && nodeData.children.length > 0) {
+        for (const child of nodeData.children) {
+          if (!child || child.type !== "COMPONENT" || !child.id) continue;
+
+          const fullChildData = await sendCommandToFigma("get_node_info", { nodeId: child.id });
+          const childName = child.name || nodeData.name || "";
+          const descForChild = buildNodeDescription(componentDescription, childName);
+
+          nodesToProcess.push({
+            nodeId: child.id,
+            nodeName: childName,
+            nodeData: fullChildData,
+            description: descForChild,
+          });
+        }
+      } else {
+        const nodeName = nodeData.name || "";
+        const descForNode = buildNodeDescription(componentDescription, nodeName);
+        nodesToProcess.push({
+          nodeId: targetNodeId,
+          nodeName,
+          nodeData,
+          description: descForNode,
+        });
+      }
+
+      // Get available variables first (needed for matching)
+      // export_variable_collections returns an array of collections directly
+      const collectionsArray = (await sendCommandToFigma("export_variable_collections", {})) as Array<{
+          id: string;
+          name: string;
+          modes: Array<{ modeId: string; name: string }>;
+          variables: Array<{
+            id: string;
+            name: string;
+            type: string;
+            valuesByMode: Record<string, any>;
+          }>;
+        }>;
+
+      // Flatten all variables into a single array for matching
+      const allVariables = collectionsArray.flatMap((collection) =>
+        collection.variables.map((variable) => ({
+          ...variable,
+          collectionId: collection.id,
+        }))
+      );
+
+      // Extract collection info for filtering
+      const collections = collectionsArray.map((collection) => ({
+        id: collection.id,
+        name: collection.name,
+      }));
+
+      // Extract actual values from node data
+      const nodeMatchesById = new Map<
+        string,
+        {
+          nodeName: string;
+          description: string;
+          matches: Array<{ property: string; match: any | null }>;
+        }
+      >();
+
+      const appliedTokens: Array<{
+        nodeId: string;
+        nodeName: string;
+        property: string;
+        variableName: string;
+        variableId: string;
+        confidence: number;
+      }> = [];
+      const failedMatches: Array<{
+        nodeId: string;
+        nodeName: string;
+        property: string;
+        reason: string;
+      }> = [];
+
+      for (const { nodeId: nodeToTokenizeId, nodeName, nodeData: perNodeData, description } of nodesToProcess) {
+        const hasFills =
+          Array.isArray(perNodeData.fills) && perNodeData.fills.length > 0;
+        const hasStrokes =
+          Array.isArray(perNodeData.strokes) && perNodeData.strokes.length > 0;
+
+        // If this node itself has no visual styling, but has children,
+        // try to tokenize its nested instances instead (useful for button groups, etc.)
+        if (!hasFills && !hasStrokes && Array.isArray(perNodeData.children) && perNodeData.children.length > 0) {
+          for (const child of perNodeData.children) {
+            if (!child || child.type !== "INSTANCE" || !child.id) continue;
+
+            const fullChildData = await sendCommandToFigma("get_node_info", { nodeId: child.id });
+            const childNode: any = fullChildData;
+            const childName = child.name || nodeName;
+            const childDescription = buildNodeDescription(description, childName);
+
+            const childValues: any = {
+              fills: childNode.fills,
+              strokes: childNode.strokes,
+              cornerRadius: childNode.cornerRadius,
+              paddingTop: childNode.paddingTop,
+              paddingRight: childNode.paddingRight,
+              paddingBottom: childNode.paddingBottom,
+              paddingLeft: childNode.paddingLeft,
+              itemSpacing: childNode.itemSpacing,
+              fontSize: childNode.fontSize,
+              fontWeight: childNode.fontWeight,
+              // Add more properties as needed
+            };
+
+            const childMatches = await matchComponentValuesToTokens(
+              childValues,
+              allVariables,
+              collections,
+              childDescription,
+              tolerance
+            );
+
+            nodeMatchesById.set(child.id, {
+              nodeName: childName,
+              description: childDescription,
+              matches: childMatches,
+            });
+
+            // --- Foreground (text/icon) handling for this instance ---
+            // We treat this as an ACTION role if names hint at actions/buttons,
+            // and choose foreground tokens accordingly.
+            const lowerChildName = childName.toLowerCase();
+            const isActionLike =
+              lowerChildName.includes("button") ||
+              lowerChildName.includes("primary") ||
+              lowerChildName.includes("secondary") ||
+              lowerChildName.includes("secundary") || // tolerate spelling used in this file
+              lowerChildName.includes("action");
+
+            if (isActionLike) {
+              // Determine hierarchy: primary / secondary / accent (default to primary)
+              let hierarchy: "primary" | "secondary" | "accent" = "primary";
+              if (lowerChildName.includes("secondary") || lowerChildName.includes("secundary")) {
+                hierarchy = "secondary";
+              } else if (lowerChildName.includes("accent")) {
+                hierarchy = "accent";
+              }
+
+              // Global secondary-action rule:
+              // - Secondary actions invert primary: structural/light surface,
+              //   but keep PRIMARY action color for text/icons.
+              // - On light surfaces we must use the *inverse* primary foreground (blue on white),
+              //   not the default primary foreground (white on blue).
+              let foregroundTokenName: string;
+              if (hierarchy === "secondary") {
+                foregroundTokenName = "color/foreground/action/primary/inverse/default";
+              } else {
+                foregroundTokenName = `color/foreground/action/${hierarchy}/default`;
+              }
+
+              // Find the foreground variable once
+              let fgVariableId: string | undefined;
+              let fgCollectionId: string | undefined;
+              for (const collection of collectionsArray) {
+                const variable = collection.variables.find(
+                  (v) => v.name === foregroundTokenName
+                );
+                if (variable) {
+                  fgVariableId = variable.id;
+                  fgCollectionId = collection.id;
+                  break;
+                }
+              }
+
+              if (fgVariableId && fgCollectionId) {
+                // Collect TEXT children of this instance
+                const textNodes: any[] = [];
+                const collectTextNodes = (node: any) => {
+                  if (!node || typeof node !== "object") return;
+                  if (node.type === "TEXT" && node.id) {
+                    textNodes.push(node);
+                  }
+                  if (Array.isArray(node.children)) {
+                    node.children.forEach(collectTextNodes);
+                  }
+                };
+                collectTextNodes(childNode);
+
+                for (const textNode of textNodes) {
+                  try {
+                    const bindResult = await sendCommandToFigma("set_variable_binding", {
+                      nodeId: textNode.id,
+                      propertyName: "fills",
+                      variableId: fgVariableId,
+                      collectionId: fgCollectionId,
+                    });
+
+                    if ((bindResult as any).success) {
+                      appliedTokens.push({
+                        nodeId: textNode.id,
+                        nodeName: textNode.name || childName,
+                        property: "fills",
+                        variableName: foregroundTokenName,
+                        variableId: fgVariableId,
+                        confidence: 1,
+                      });
+                    } else {
+                      failedMatches.push({
+                        nodeId: textNode.id,
+                        nodeName: textNode.name || childName,
+                        property: "fills",
+                        reason: "Failed to bind foreground variable",
+                      });
+                    }
+                  } catch (error) {
+                    failedMatches.push({
+                      nodeId: textNode.id,
+                      nodeName: textNode.name || childName,
+                      property: "fills",
+                      reason: error instanceof Error ? error.message : String(error),
+                    });
+                  }
+                }
+              }
+            }
+          }
+
+          // Skip matching the wrapper node itself in this case
+          continue;
+        }
+
+        const actualValues: any = {
+          fills: perNodeData.fills,
+          strokes: perNodeData.strokes,
+          cornerRadius: perNodeData.cornerRadius,
+          paddingTop: perNodeData.paddingTop,
+          paddingRight: perNodeData.paddingRight,
+          paddingBottom: perNodeData.paddingBottom,
+          paddingLeft: perNodeData.paddingLeft,
+          itemSpacing: perNodeData.itemSpacing,
+          fontSize: perNodeData.fontSize,
+          fontWeight: perNodeData.fontWeight,
+          // Add more properties as needed
+        };
+
+        // Match values to tokens using Figma variables
+        // NOTE: Only matches against theme tokens, never foundation tokens
+        const matches = await matchComponentValuesToTokens(
+          actualValues,
+          allVariables,
+          collections,
+          description,
+          tolerance
+        );
+
+        nodeMatchesById.set(nodeToTokenizeId, {
+          nodeName,
+          description,
+          matches,
+        });
+      }
+
+      // Apply matched tokens
+      if (applyTokens) {
+        for (const [nodeKey, nodeResult] of nodeMatchesById.entries()) {
+          const { nodeName, matches } = nodeResult;
+
+          for (const { property, match } of matches) {
+            // If we couldn't find a reasonable match, skip this property and move on
+            if (!match) {
+              failedMatches.push({
+                nodeId: nodeKey,
+                nodeName,
+                property,
+                reason: "No matching token found",
+              });
+              continue;
+            }
+
+            // Find the variable in Figma (by name within any collection)
+            let variableId: string | undefined;
+            let collectionId: string | undefined;
+
+            for (const collection of collectionsArray) {
+              const variable = collection.variables.find(
+                (v) => v.name === match.variableName
+              );
+              if (variable) {
+                variableId = variable.id;
+                collectionId = collection.id;
+                break;
+              }
+            }
+
+            if (!variableId) {
+              failedMatches.push({
+                nodeId: nodeKey,
+                nodeName,
+                property,
+                reason: `Variable "${match.variableName}" not found in Figma`,
+              });
+              continue;
+            }
+
+            // Apply the token
+            try {
+              const bindResult = await sendCommandToFigma("set_variable_binding", {
+                nodeId: nodeKey,
+                propertyName: property,
+                variableId,
+                collectionId,
+              });
+
+              if ((bindResult as any).success) {
+                appliedTokens.push({
+                  nodeId: nodeKey,
+                  nodeName,
+                  property,
+                  variableName: match.variableName,
+                  variableId,
+                  confidence: match.confidence,
+                });
+              } else {
+                failedMatches.push({
+                  nodeId: nodeKey,
+                  nodeName,
+                  property,
+                  reason: "Failed to bind variable",
+                });
+              }
+            } catch (error) {
+              failedMatches.push({
+                nodeId: nodeKey,
+                nodeName,
+                property,
+                reason: error instanceof Error ? error.message : String(error),
+              });
+            }
+          }
+        }
+      }
+
+      // Build response
+      const response: string[] = [];
+      response.push(`Token matching summary:`);
+      response.push("");
+
+      if (nodeMatchesById.size > 0) {
+        response.push("Matches found:");
+        for (const [nodeKey, nodeResult] of nodeMatchesById.entries()) {
+          const { nodeName, matches } = nodeResult;
+          response.push(`- Node "${nodeName || nodeKey}":`);
+          matches.forEach(({ property, match }) => {
+            if (match) {
+              response.push(
+                `    ${property}: ${match.variableName} (confidence: ${(match.confidence * 100).toFixed(
+                  0
+                )}%, type: ${match.matchType})`
+              );
+            } else {
+              response.push(`    ${property}: No match found`);
+            }
+          });
+          response.push("");
+        }
+      }
+
+      if (applyTokens) {
+        if (appliedTokens.length > 0) {
+          response.push(`Successfully applied ${appliedTokens.length} tokens:`);
+          appliedTokens.forEach(({ property, variableName, confidence }) => {
+            response.push(
+              `  ${property} → ${variableName} (${(confidence * 100).toFixed(0)}% confidence)`
+            );
+          });
+          response.push("");
+        }
+
+        if (failedMatches.length > 0) {
+          response.push(`Failed to apply ${failedMatches.length} tokens:`);
+          failedMatches.forEach(({ property, reason }) => {
+            response.push(`  ${property}: ${reason}`);
+          });
+        }
+      } else {
+        response.push("(Tokens not applied - set applyTokens=true to apply)");
+      }
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: response.join("\n"),
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error auto-applying tokens: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+      };
+    }
+  }
+);
+
+// ============================================================================
+// OPTIONAL TOOLS - Commented out (prototyping & connections)
+// ============================================================================
+
+/*
 // Connect Nodes Tool
 server.tool(
   "create_connections",

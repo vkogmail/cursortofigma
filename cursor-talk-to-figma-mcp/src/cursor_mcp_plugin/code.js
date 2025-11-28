@@ -408,10 +408,42 @@ async function exportVariableCollections() {
   for (const v of vars) {
     const key = v.variableCollectionId;
     if (!varsByCollection[key]) varsByCollection[key] = [];
+    
+    // Extract valuesByMode - convert Figma's variable values to a plain object
+    const valuesByMode = {};
+    const collection = collections.find(c => c.id === v.variableCollectionId);
+    if (collection) {
+      for (const mode of collection.modes) {
+        const value = v.valuesByMode[mode.modeId];
+        // Convert Figma variable value to plain object/primitive
+        if (value !== undefined) {
+          if (value.type === "VARIABLE_ALIAS") {
+            // For aliases, we need to resolve them - but for now, store the reference
+            valuesByMode[mode.modeId] = { type: "VARIABLE_ALIAS", id: value.id };
+          } else {
+            // For direct values (COLOR, FLOAT, STRING), extract the actual value
+            if (value.type === "COLOR") {
+              valuesByMode[mode.modeId] = {
+                r: value.r,
+                g: value.g,
+                b: value.b,
+                a: value.a !== undefined ? value.a : 1
+              };
+            } else {
+              // For FLOAT and STRING, use the value directly
+              valuesByMode[mode.modeId] = value;
+            }
+          }
+        }
+      }
+    }
+    
     varsByCollection[key].push({
       id: v.id,
       name: v.name,
+      type: v.resolvedType, // COLOR, FLOAT, STRING, etc.
       variableCollectionId: v.variableCollectionId,
+      valuesByMode: valuesByMode,
     });
   }
 
@@ -478,10 +510,40 @@ async function setVariableBinding(params) {
   // For other scalar props (width, height, fontSize, etc.) we can use setBoundVariable.
   if (propertyName === "fills" || propertyName === "strokes") {
     const key = propertyName;
+
+    // If this is a TEXT node, also clear any applied text style so color is fully
+    // controlled by variables instead of being locked by the text style.
+    if (node.type === "TEXT" && "textStyleId" in node) {
+      try {
+        node.textStyleId = "";
+      } catch (e) {
+        // Ignore if style cannot be cleared; we'll still attempt variable binding.
+      }
+    }
+
     const paints = node[key] || [];
     const newPaints = paints.map((paint) => {
       if (!paint) return paint;
       const copy = Object.assign({}, paint);
+
+      // If a color style is applied to this paint, clear it before binding the variable.
+      // This is safe for our design system, where color should come from variables
+      // and styles are reserved for typography/effects.
+      if ("fillStyleId" in copy && copy.fillStyleId) {
+        try {
+          copy.fillStyleId = "";
+        } catch (e) {
+          // Ignore if style cannot be cleared; variable binding will still be attempted.
+        }
+      }
+      if ("strokeStyleId" in copy && copy.strokeStyleId) {
+        try {
+          copy.strokeStyleId = "";
+        } catch (e) {
+          // Ignore if style cannot be cleared.
+        }
+      }
+
       const existingBound = copy.boundVariables || {};
       // For color paints, the bindable channel is "color"
       copy.boundVariables = Object.assign({}, existingBound, {
@@ -932,6 +994,16 @@ function filterFigmaNode(node) {
     id: node.id,
     name: node.name,
     type: node.type,
+    // HINT FOR HOST:
+    // These flags make it easy for the MCP server to distinguish
+    // between base components and their instances. In the future,
+    // when we want to _avoid_ applying variables directly to instances
+    // (e.g. when a card contains a nested button whose variables
+    // should live on the button component definition instead),
+    // the server can use these booleans to quickly skip INSTANCE nodes.
+    isComponent: node.type === "COMPONENT",
+    isComponentSet: node.type === "COMPONENT_SET",
+    isInstance: node.type === "INSTANCE",
   };
 
   if (node.fills && node.fills.length > 0) {
@@ -997,13 +1069,14 @@ function filterFigmaNode(node) {
   }
 
   if (node.children) {
+    // IMPORTANT:
+    // We deliberately keep the full TEXT subtree (and its simple wrappers)
+    // so that the MCP host can always see labels and icon-font glyphs,
+    // even when they are nested inside instances or helper frames.
+    // Heavy shapes like VECTOR are still pruned above.
     filtered.children = node.children
-      .map((child) => {
-        return filterFigmaNode(child);
-      })
-      .filter((child) => {
-        return child !== null;
-      });
+      .map((child) => filterFigmaNode(child))
+      .filter((child) => child !== null);
   }
 
   return filtered;

@@ -1,6 +1,6 @@
 {
-  "name": "Cursor MCP Plugin",
-  "id": "cursor-mcp-plugin",
+  "name": "Token Link",
+  "id": "token-link",
   "api": "1.0.0",
   "main": "code.js",
   "ui": "ui.html",

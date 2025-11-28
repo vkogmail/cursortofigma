@@ -2,15 +2,15 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>Cursor MCP Plugin</title>
+    <title>Token Link</title>
     <style>
       body {
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
           Helvetica, Arial, sans-serif;
         margin: 0;
         padding: 20px;
-        color: #e0e0e0;
-        background-color: #1e1e1e;
+        color: #fbfaf9; /* default text */
+        background-color: #0d0d12; /* app background */
       }
       .container {
         display: flex;
@@ -21,14 +21,14 @@
         font-size: 16px;
         font-weight: 600;
         margin-bottom: 10px;
-        color: #ffffff;
+        color: #fbfaf9;
       }
       h2 {
         font-size: 14px;
         font-weight: 600;
         margin-top: 20px;
         margin-bottom: 8px;
-        color: #ffffff;
+        color: #fbfaf9;
       }
       button {
         background-color: #18a0fb;
@@ -65,8 +65,8 @@
         font-size: 14px;
         width: 100%;
         box-sizing: border-box;
-        background-color: #2d2d2d;
-        color: #e0e0e0;
+        background-color: #272735;
+        color: #fbfaf9;
       }
       label {
         display: block;
@@ -82,12 +82,12 @@
         font-size: 14px;
       }
       .status.connected {
-        background-color: #1a472a;
-        color: #4ade80;
+        background-color: #004d2d; /* success bg (darkened) */
+        color: #00cc74; /* success text */
       }
       .status.disconnected {
-        background-color: #471a1a;
-        color: #ff9999;
+        background-color: #331400; /* warning/disconnected bg (darkened) */
+        color: #ff6200; /* warning text */
       }
       .status.info {
         background-color: #1a3147;
@@ -131,10 +131,11 @@
         font-size: 14px;
         font-weight: 500;
         color: #999999;
+        border-radius: 8px 8px 0 0;
       }
       .tab.active {
-        border-bottom: 2px solid #18a0fb;
-        color: #18a0fb;
+        background-color: #607a05; /* active tab bg */
+        color: #e9f3b8; /* active tab text */
       }
       .tab-content {
         display: none;
@@ -151,13 +152,16 @@
         text-decoration: underline;
       }
       .header-logo {
-        padding: 16px;
+        padding: 8px;
         border-radius: 16px;
-        background-color: #333;
+        background-color: transparent;
+        display: flex;
+        align-items: center;
+        justify-content: center;
       }
       .header-logo-image {
-        width: 24px;
-        height: 24px;
+        width: 32px;
+        height: 32px;
         object-fit: contain;
       }
       /* Progress styles */
@@ -173,14 +177,29 @@
     <div class="container">
       <div class="header">
         <div class="header-logo">
-          <img
+          <!-- Inline logo SVG so it always renders inside the plugin UI -->
+          <svg
             class="header-logo-image"
-            src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADwAAAA8CAMAAAANIilAAAAABGdBTUEAALGPC/xhBQAAAAFzUkdCAK7OHOkAAAAJcEhZcwAAEJwAABCcASbNOjQAAAB1UExURUdwTP////////////////39/f////////////////////////////7+/v////////////39/f////////////////////////////////////////////////////39/fn5+ejo6P///+rq6uXl5f////Ly8gf4a04AAAAkdFJOUwAOdkZCfz04zIgbT0pkIagnm7C9b6C2LWqSxBMyB11W2Ovsy3D12ZYAAALtSURBVEjHndcJt6ogEADgXNAUcWlxSQVN3/3/P/EBAgJpWdM9p5ue78xANE2n05vIUduffgvn1oA0bX+hvRc1DYjTPHe+tiGIoqhx4zTNq/y72lMURQtmqasuPc4dAmgwfWuZrqquiw8uNnC5BRJT3YXhIZ7Xris0oLjlmOrArz7VHpOb6wpNee0ITVMHvvd25/qgvtFwla8dpxV7xnTi7dbed7iuTY16lZoV7iXQb3cqRgjVgoviKTZSUw2719pbD2OEVu5yjnqeOpZ75lMMobVzfUcwC6lrofGJpdb3jGtj6TkkNKRWtXMsU+ciNdfQUwe+zZ7/vo1CYYgv39G/kShMS6mHL+g8F96K2Uqi52E6j3DFnsc4uR/hMwugYd9bOLoeSTvPE1yx4/sLh9B9fKbziHVM3z/G+dKb5wdKdysxsNCc4+2l/yk7EnrOVhwGBt9auqJ0t9gR13C4cl77bdil88SPuK9jxrXksHjab48Mwo+4ha3aSbZJ52JpC4GFbY7OdsVst4Lls/mKZe1y6fXTonS3RFsIN7C5dAJsO+WiI21jbd8xesFEtoUdLLjH+qGNJ9WRuj3MOOQNycaV6khvsLc0MxsD2Uq7bhcHuBZh4rFdujjT1c6GkaXtszCx3sW3MRRfNjwiI7EjGjGfFjZwUgM9CuNggqRVXz+vOGDTBOCP5UnHE73ghjK1jYNlEIma9UnHBb/qdkvq1MSQjk4yCvGk4UneQylLbWAIio3I1t26q4sNTuM01tqQe9+My5pYv9wk8Ypv92w7JpXYulGoD8aJ3C/bUUp8tW5EuTa2oXI7ZGLzahZYE0l03QqZWI8Lfh1lw+zxEoNIrF8Dm/NQT8rzgz+WP/oQmL6Ud4pud/4DZzMWPKjXZfJufOyiVzzKV4/609yelDaWiZsDc6+DSwOLxNqxeD/6Ah3zf674+Kyf3xUeDi3WDFIKzCpOv/5phB4MD+cs/OWXVdych/GBf/xJd4pL9+1i/wOElMO5v/co4wAAAABJRU5ErkJggg=="
-          />
+            viewBox="0 0 32 32"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <g clip-path="url(#clip0_token_link_logo)">
+              <rect width="32" height="32" rx="7.88177" fill="#91BA00" />
+              <path
+                d="M23.7911 16.7803C24.079 16.4924 24.5721 16.6965 24.5724 17.1035V24.2285C24.5724 24.7335 24.1623 25.1436 23.6573 25.1436H16.5323C16.1253 25.1432 15.9212 24.6502 16.2091 24.3623L23.7911 16.7803ZM14.5157 6.90234C15.0182 6.85253 15.4287 7.26664 15.4288 7.77148V24.2285C15.4288 24.7335 15.0182 25.1475 14.5157 25.0977C9.89514 24.6393 6.28625 20.7412 6.28625 16C6.2864 11.2589 9.89521 7.36062 14.5157 6.90234ZM23.6573 6.85742C24.1622 6.85742 24.5723 7.26664 24.5724 7.77148V14.8965C24.5724 15.3038 24.0791 15.5077 23.7911 15.2197L16.2091 7.6377C15.9216 7.34977 16.1255 6.85775 16.5323 6.85742H23.6573Z"
+                fill="#0D0D12"
+              />
+            </g>
+            <defs>
+              <clipPath id="clip0_token_link_logo">
+                <rect width="32" height="32" fill="white" />
+              </clipPath>
+            </defs>
+          </svg>
         </div>
         <div class="header-text">
-          <h1>Cursor Talk To Figma Plugin</h1>
-          <p>Connect Figma to Cursor AI using MCP</p>
+          <h1>Token Link</h1>
+          <p>Read Figma variables, match them to design tokens, and apply them back intelligently.</p>
         </div>
       </div>
 
@@ -190,31 +209,14 @@
       </div>
 
       <div id="content-connection" class="tab-content active">
-        <div class="section">
-          <label for="port">WebSocket Server Port</label>
-          <div style="display: flex; gap: 8px">
-            <input
-              type="number"
-              id="port"
-              placeholder="3055"
-              value="3055"
-              min="1024"
-              max="65535"
-            />
-            <button id="btn-connect" class="primary">Connect</button>
-          </div>
+        <div class="section" style="display: flex; justify-content: flex-end; margin-bottom: 12px;">
+          <button id="btn-connect" class="primary">Connect</button>
         </div>
 
         <div id="connection-status" class="status disconnected">
           Not connected to Cursor MCP server
         </div>
 
-        <div class="section">
-          <button id="btn-disconnect" class="secondary" disabled>
-            Disconnect
-          </button>
-        </div>
-        
         <!-- Add Progress Bar Section -->
         <div id="progress-container" class="section hidden">
           <h2>Operation Progress</h2>
@@ -231,17 +233,22 @@
 
       <div id="content-about" class="tab-content">
         <div class="section">
-          <h2>About Cursor Talk To Figma Plugin</h2>
+          <h2>About Token Link</h2>
           <p>
-            This plugin allows Cursor AI to communicate with Figma, enabling
-            AI-assisted design operations.
+            <strong>Token Link</strong> helps you keep Figma and your design tokens in sync.
+            It reads variables from selected elements and components, matches them to your
+            design tokens, and smartly applies the right variables back into Figma — so
+            components become tokenized without manual plumbing.
+            It is based on the original
             <a
               class="link"
-              onclick="window.open(`https://github.com/grab/cursor-talk-to-figma-mcp`, '_blank')"
-              >Github</a
+              onclick="window.open('https://github.com/grab/cursor-talk-to-figma-mcp', '_blank')"
+              >cursor-talk-to-figma-mcp</a
             >
+            project and has been customized for token-driven workflows, reverse
+            tokenization, and tighter integration with our design system.
           </p>
-          <p>Version: 1.0.0</p>
+          <p>Version: 1.0.0 (custom fork)</p>
 
           <h2>How to Use</h2>
           <ol>
@@ -265,9 +272,7 @@
       };
 
       // UI Elements
-      const portInput = document.getElementById("port");
       const connectButton = document.getElementById("btn-connect");
-      const disconnectButton = document.getElementById("btn-disconnect");
       const connectionStatus = document.getElementById("connection-status");
 
       // Tabs
@@ -293,9 +298,14 @@
           isConnected ? "connected" : "disconnected"
         }`;
 
-        connectButton.disabled = isConnected;
-        disconnectButton.disabled = !isConnected;
-        portInput.disabled = isConnected;
+        // Toggle connect button appearance/label
+        if (isConnected) {
+          connectButton.textContent = "Disconnect";
+          connectButton.classList.add("secondary");
+        } else {
+          connectButton.textContent = "Connect";
+          connectButton.classList.remove("secondary");
+        }
       }
 
       // Connect to WebSocket server
@@ -533,19 +543,18 @@
         });
       });
 
-      // Connect to server
+      // Connect / disconnect toggle
       connectButton.addEventListener("click", () => {
-        const port = parseInt(portInput.value, 10) || 3055;
-        updateConnectionStatus(false, "Connecting...");
-        connectionStatus.className = "status info";
-        connectToServer(port);
-      });
-
-      // Disconnect from server
-      disconnectButton.addEventListener("click", () => {
-        updateConnectionStatus(false, "Disconnecting...");
-        connectionStatus.className = "status info";
-        disconnectFromServer();
+        if (!state.connected) {
+          const port = state.serverPort || 3055;
+          updateConnectionStatus(false, "Connecting...");
+          connectionStatus.className = "status info";
+          connectToServer(port);
+        } else {
+          updateConnectionStatus(false, "Disconnecting...");
+          connectionStatus.className = "status info";
+          disconnectFromServer();
+        }
       });
 
       // Function to update progress UI
@@ -626,10 +635,8 @@
           case "init-settings":
             // Initialize settings from plugin code
             if (message.settings) {
-              if (message.settings.serverPort) {
-                state.serverPort = message.settings.serverPort;
-                portInput.value = message.settings.serverPort;
-              }
+              // Keep channelName configurable via settings if ever needed,
+              // but the server port is fixed in the UI (3055).
               if (message.settings.channelName) {
                 state.channelName = message.settings.channelName;
               }
@@ -642,7 +649,9 @@
             connectButton.click();
             break;
           case "auto-disconnect":
-            disconnectButton.click();
+            if (state.connected) {
+              connectButton.click();
+            }
             break;
           case "command-result":
             // Forward the result from plugin code back to WebSocket
