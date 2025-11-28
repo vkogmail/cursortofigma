@@ -41,7 +41,7 @@
       padding: 12px;
       display: flex;
       justify-content: center;
-      align-items: flex-start; /* Fixed top position to prevent jumping */
+      height: 100%;
       min-height: 100vh;
       box-sizing: border-box;
     }
@@ -55,7 +55,9 @@
       box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
       overflow: hidden;
       position: relative;
-      height: fit-content;
+      display: flex;
+      flex-direction: column;
+      height: 100%;
     }
 
     /* Glow Effect */
@@ -66,7 +68,7 @@
       transform: translateX(-50%);
       width: 128px;
       height: 128px;
-      background-color: var(--primary);
+      background-color: transparent;
       filter: blur(100px);
       opacity: 0.1;
       pointer-events: none;
@@ -77,6 +79,7 @@
       position: relative;
       z-index: 10;
       padding: 16px; /* Reduced from 20px */
+      flex: 1 1 auto; /* Take up all available vertical space above footer */
     }
 
     /* Header */
@@ -96,7 +99,7 @@
     .logo-icon {
       width: 40px;
       height: 40px;
-      background-color: var(--primary);
+      background-color: transparent;
       border-radius: 50%;
       display: flex;
       align-items: center;
@@ -450,7 +453,7 @@
 
     .progress-fill {
       height: 100%;
-      background-color: var(--primary);
+      background-color: transparent;
       border-radius: 4px;
       transition: width 0.3s ease;
     }
@@ -465,6 +468,35 @@
 
     .operation-complete { color: var(--success); }
     .operation-error { color: var(--error); }
+
+    /* Custom scrollbar for About panel */
+    .about-panel::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .about-panel::-webkit-scrollbar-track {
+      background: rgba(0,0,0,0.2);
+      border-radius: 999px;
+    }
+
+    .about-panel::-webkit-scrollbar-thumb {
+      background: rgba(255,255,255,0.25);
+      border-radius: 999px;
+    }
+
+    .about-panel::-webkit-scrollbar-thumb:hover {
+      background: rgba(255,255,255,0.4);
+    }
+
+    .link {
+      color: var(--primary);
+      text-decoration: none;
+      cursor: pointer;
+    }
+
+    .link:hover {
+      text-decoration: underline;
+    }
 
   </style>
 </head>
@@ -484,7 +516,7 @@
               <!-- Inline Logo SVG -->
               <svg viewBox="0 0 32 32" width="24" height="24" xmlns="http://www.w3.org/2000/svg">
                 <g clip-path="url(#clip0_token_link_logo)">
-                  <rect width="32" height="32" rx="7.88177" fill="#C7E02A" />
+                  <rect width="32" height="32" rx="7.88177" fill="#91BA00" />
                   <path d="M23.7911 16.7803C24.079 16.4924 24.5721 16.6965 24.5724 17.1035V24.2285C24.5724 24.7335 24.1623 25.1436 23.6573 25.1436H16.5323C16.1253 25.1432 15.9212 24.6502 16.2091 24.3623L23.7911 16.7803ZM14.5157 6.90234C15.0182 6.85253 15.4287 7.26664 15.4288 7.77148V24.2285C15.4288 24.7335 15.0182 25.1475 14.5157 25.0977C9.89514 24.6393 6.28625 20.7412 6.28625 16C6.2864 11.2589 9.89521 7.36062 14.5157 6.90234ZM23.6573 6.85742C24.1622 6.85742 24.5723 7.26664 24.5724 7.77148V14.8965C24.5724 15.3038 24.0791 15.5077 23.7911 15.2197L16.2091 7.6377C15.9216 7.34977 16.1255 6.85775 16.5323 6.85742H23.6573Z" fill="#0D0D12" />
                 </g>
                 <defs>
@@ -496,7 +528,7 @@
             </div>
             <div class="header-text">
               <h1>Token Link</h1>
-              <p>Figma → MCP Sync</p>
+              <p>Figma ↔ Tokens via MCP</p>
             </div>
           </div>
           <div class="badge">v1.0.0</div>
@@ -536,7 +568,7 @@
                 <div class="detail-row">Port: <span class="mono" id="port-display">3055</span></div>
                 <div class="detail-row">Channel: <span class="mono" id="channel-display">figma-mcp-default</span></div>
               </div>
-              <p id="status-message" class="status-message">Connect to the local server to sync your design tokens.</p>
+              <p id="status-message" class="status-message">Connect to your local MCP server to read Figma variables and apply matching design tokens.</p>
             </div>
 
           </div>
@@ -562,34 +594,22 @@
 
         <!-- About Tab -->
         <div id="tab-about" class="tab-content">
-          <div class="about-panel">
-            <div class="about-header">
-              <div class="about-icon-bg">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
-              </div>
-              <div>
-                <h3>Token Link</h3>
-                <p>Version 1.0.0</p>
-              </div>
-            </div>
-            
+          <div class="about-panel"> 
             <div class="info-list">
               <div class="info-item">
-                <span class="info-label">Status</span>
-                <span class="info-value text-green">Active</span>
+                <span class="info-label">Maintainer</span>
+                <span class="info-value">Vincent Koopmans</span>
               </div>
               <div class="info-item">
-                <span class="info-label">Protocol</span>
-                <span class="info-value">MCP / WebSocket</span>
-              </div>
-              <div class="info-item">
-                <span class="info-label">License</span>
-                <span class="info-value">MIT</span>
+                <span class="info-label">Contact</span>
+                <span class="info-value">
+                  <a class="link" onclick="window.open('mailto:vincent@createnew.co', '_blank')">vincent@createnew.co</a>
+                </span>
               </div>
             </div>
 
             <div class="description">
-              <p>Token Link bridges your Figma designs with your codebase using the Model Context Protocol (MCP). Sync tokens, variables, and assets in real-time.</p>
+              <p>Token Link bridges your Figma components and your design tokens using the Model Context Protocol (MCP). It reads variables and styles from selections, matches them to your token sets, and can intelligently apply tokens back into Figma, so components become consistently tokenized without manual plumbing. Built as an extended, token-focused fork of the original <a class="link" onclick="window.open('https://github.com/grab/cursor-talk-to-figma-mcp', '_blank')">cursor-talk-to-figma-mcp</a> project by Grab.</p>
             </div>
           </div>
         </div>
@@ -673,7 +693,7 @@
         statusMessage.classList.remove('hidden');
         statusDetails.classList.add('hidden');
         // Show custom message if exists, otherwise default prompt
-        statusMessage.textContent = state.statusMessageText || "Connect to the local server to sync your design tokens.";
+        statusMessage.textContent = state.statusMessageText || "Connect to your local MCP server to read Figma variables and apply matching design tokens.";
       }
 
       // 4. Button Styling & Text
