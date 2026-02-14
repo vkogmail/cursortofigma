@@ -1,0 +1,64 @@
+name: Dependabot security automerge
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, labeled]
+  schedule:
+    - cron: "23 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  merge-security-prs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Merge Dependabot security PRs
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const eventName = context.eventName;
+
+            const hasSecurityLabel = (pr) =>
+              Array.isArray(pr.labels) && pr.labels.some((l) => String(l.name || '').toLowerCase() === 'security');
+
+            let candidatePRs = [];
+            if (eventName === 'pull_request_target') {
+              const pr = context.payload.pull_request;
+              if (pr?.user?.login === 'dependabot[bot]' && !pr.draft && hasSecurityLabel(pr) && pr.state === 'open') {
+                candidatePRs = [pr];
+              }
+            } else {
+              const pulls = await github.paginate(github.rest.pulls.list, {
+                owner,
+                repo,
+                state: 'open',
+                per_page: 100,
+              });
+              candidatePRs = pulls.filter((pr) =>
+                pr.user?.login === 'dependabot[bot]' &&
+                !pr.draft &&
+                hasSecurityLabel(pr)
+              );
+            }
+
+            core.info(`Found ${candidatePRs.length} Dependabot security PR(s).`);
+
+            for (const pr of candidatePRs) {
+              try {
+                await github.rest.pulls.merge({
+                  owner,
+                  repo,
+                  pull_number: pr.number,
+                  merge_method: 'squash',
+                });
+                core.info(`Merged #${pr.number}`);
+              } catch (error) {
+                core.warning(`Merge failed for #${pr.number}: ${error.message}`);
+              }
+            }
