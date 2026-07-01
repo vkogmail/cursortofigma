@@ -11,7 +11,9 @@
     "download:token-css": "node scripts/download-token-css.js"
   },
   "overrides": {
-    "postcss": "^8.5.10"
+    "postcss": "^8.5.10",
+    "@babel/core": ">=7.29.6",
+    "js-yaml": ">=4.2.0"
   },
   "dependencies": {
     "next": "^16.2.6",
